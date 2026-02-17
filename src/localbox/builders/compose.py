@@ -1,0 +1,237 @@
+"""Docker Compose file generator."""
+
+import dataclasses
+from collections.abc import KeysView
+from pathlib import Path
+from typing import Any
+
+import yaml
+from loguru import logger
+from rich.console import Console
+
+from localbox.config import Solution
+from localbox.models.base_env import BaseEnv, EnvField
+from localbox.models.builder import BindVolume, CacheVolume, NamedVolume, Volume
+from localbox.models.service import Service
+
+console = Console()
+
+
+class _QuotedStr(str):
+    """str subclass that serializes as a double-quoted YAML scalar."""
+
+
+class _NoAliasDumper(yaml.SafeDumper):
+    """YAML dumper with no anchors/aliases and consistent sequence indentation."""
+
+    def ignore_aliases(self, data: Any) -> bool:
+        return True
+
+    def increase_indent(self, flow=False, indentless=False):
+        # Force indented sequences so list items always indent under their key
+        return super().increase_indent(flow=flow, indentless=False)
+
+
+_NoAliasDumper.add_representer(
+    _QuotedStr,
+    lambda dumper, data: dumper.represent_scalar("tag:yaml.org,2002:str", data, style='"'),
+)
+
+
+def generate_compose_file(solution: Solution) -> Path:
+    """
+    Generate docker-compose.yml in solution root.
+
+    Returns path to generated compose file.
+    """
+    # Generate docker-compose.yml
+    solution.directories.compose.mkdir(parents=True, exist_ok=True)
+    # TRD says generate in solution root.
+
+    compose: dict[str, Any] = {
+        "name": solution.docker.compose_project,
+        "services": {},
+        "networks": {
+            solution.docker.network: {
+                "driver": "bridge",
+            }
+        },
+        "volumes": {},
+    }
+
+    logger.info("generating compose file for {} services", len(solution.services))
+    # Sort services by order
+    services = sorted(solution.services.values(), key=lambda s: s.compose.order)
+
+    for service in services:
+        service_name = service.compose_name
+        service_def = generate_service_definition(solution, service)
+        compose["services"][service_name] = service_def
+
+        # Collect named volumes for top-level declaration
+        for volume in service.compose.volumes:
+            if isinstance(volume, NamedVolume):
+                compose["volumes"][volume.name] = {}
+
+    # Write compose file
+    compose_file = solution.root / "docker-compose.yml"
+
+    raw = yaml.dump(compose, Dumper=_NoAliasDumper, default_flow_style=False, sort_keys=False)
+
+    with open(compose_file, "w") as f:
+        f.write(_format_compose_yaml(raw, compose["services"].keys()))
+
+    logger.info("compose file written to {}", compose_file)
+    console.print(f"[green]Generated[/green] {compose_file}")
+    return compose_file
+
+
+def _format_compose_yaml(yaml_text: str, service_names: KeysView[str]) -> str:
+    """Format the raw yaml.dump output for docker-compose readability.
+
+    - Inserts blank lines before each service entry (only within the services block)
+    - Inserts blank lines before top-level section headers (networks:, volumes:)
+    - Fixes empty-dict representation from '{ }' to '{}'
+    """
+    lines = yaml_text.splitlines(keepends=True)
+    result: list[str] = []
+    service_keys = {f"  {name}:" for name in service_names}
+    section_headers = {"networks:", "volumes:"}
+
+    in_services_block = False
+
+    for line in lines:
+        stripped = line.rstrip()
+
+        # Detect top-level block transitions (no leading whitespace, ends with ':')
+        if not line[0:1].isspace() and stripped.endswith(":"):
+            key = stripped.split(":")[0]
+            in_services_block = key == "services"
+
+            if stripped in section_headers and result:
+                result.append("\n")
+
+        # Blank line before each service — only inside the services: block
+        elif in_services_block and stripped in service_keys:
+            result.append("\n")
+
+        result.append(line)
+
+    text = "".join(result)
+    # Normalize empty-dict representation that PyYAML emits as '{ }'
+    text = text.replace("{ }", "{}")
+    return text
+
+
+def _render_volume(vol: Volume, solution: Solution) -> str:
+    """Render a Volume as a docker-compose volume string."""
+    if isinstance(vol, NamedVolume):
+        mount = f"{vol.name}:{vol.container}"
+    elif isinstance(vol, CacheVolume):
+        host = solution.directories.build / vol.name
+        host.mkdir(parents=True, exist_ok=True)
+        mount = f"{host}:{vol.container}"
+    elif isinstance(vol, BindVolume):
+        host = Path(vol.host)
+        if not host.is_absolute():
+            host = solution.root / host
+        mount = f"{host}:{vol.container}"
+    else:
+        raise ValueError(f"Unknown volume type: {type(vol)}")
+    if vol.readonly:
+        mount += ":ro"
+    return mount
+
+
+def generate_service_definition(solution: Solution, service: Service) -> dict:
+    """Generate docker-compose service definition."""
+    # Base definition (no container_name to allow scaling)
+    service_def: dict = {
+        "networks": [solution.docker.network],
+    }
+
+    # Hostname
+    if service.compose.hostname:
+        service_def["hostname"] = service.compose.hostname
+
+    # Profiles — auto-derived from service group, colons replaced with dashes
+    # e.g. group "db" -> profile "db", group "be:payments" -> profile "be-payments"
+    # Services without a group have no profile and always start.
+    # TODO: profiles temporarily disabled
+    # if service.group:
+    #     service_def["profiles"] = [service.group.replace(":", "-")]
+
+    # Image: use explicit image name if set, otherwise auto-generate tag
+    # Use image.name (logical name) to derive tag if dockerfile logic was used
+    # If image.image is present but no dockerfile, we pull & tag.
+    # The tag used is <solution>/service/<name>:latest
+
+    # We should use the tag generated/expected by prepare_docker_image
+    # Tag logic: f"{solution.name}/service/{service.image.name}:latest"
+
+    if service.image.name:
+        tag = f"{solution.name}/service/{service.image.name}:latest"
+        service_def["image"] = tag
+    elif service.image.image:
+        # Fallback if name not set (shouldn't happen with new validation)
+        service_def["image"] = service.image.image
+    else:
+        # Fallback: derive tag the same way _finalize_image_name would
+        image_name = (service.name or "").replace(":", "/")
+        service_def["image"] = f"{solution.name}/service/{image_name}:latest"
+
+    # Ports
+    if service.compose.ports:
+        service_def["ports"] = service.compose.ports
+
+    # Environment
+    if service.compose.environment:
+        env_instance = solution.config.env if solution.config else None
+        resolved = {}
+        for k, v in service.compose.environment.items():
+            if isinstance(v, EnvField):
+                if not isinstance(env_instance, BaseEnv):
+                    raise ValueError(
+                        f"Service environment '{k}' uses Env.FIELD reference "
+                        f"but solution env is not a BaseEnv instance"
+                    )
+                field_name = next(
+                    (f.name for f in dataclasses.fields(env_instance) if f.default is v),
+                    None,
+                )
+                if field_name is None:
+                    raise ValueError(f"Environment key '{k}': FieldInfo not found in Env")
+                actual = getattr(env_instance, field_name)
+                if isinstance(actual, EnvField):
+                    raise ValueError(
+                        f"Environment key '{k}' (Env.{field_name}) is required but not set. "
+                        f"Set it in solution.py or solution-override.py."
+                    )
+                resolved[k] = _QuotedStr(actual)
+            else:
+                resolved[k] = _QuotedStr(v)
+        service_def["environment"] = resolved
+
+    # Volumes
+    if service.compose.volumes:
+        service_def["volumes"] = [_render_volume(v, solution) for v in service.compose.volumes]
+
+    # Dependencies
+    if service.compose.depends_on:
+        depends = [dep.compose_name for dep in service.compose.depends_on]
+        service_def["depends_on"] = depends
+
+    # Links
+    if service.compose.links:
+        links = [link.replace(":", "-", 1) if ":" in link.split(":")[0] else link
+                 for link in service.compose.links]
+        service_def["links"] = links
+
+    # Healthcheck
+    if service.compose.healthcheck:
+        service_def["healthcheck"] = service.compose.healthcheck.to_compose_dict()
+
+    # Restart policy
+    service_def["restart"] = "unless-stopped"
+
+    return service_def

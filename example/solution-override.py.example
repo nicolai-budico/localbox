@@ -1,0 +1,3 @@
+# Copy this file to solution-override.py (gitignored) and set your values.
+import solution
+solution.config.env.db_pass = "change-me"

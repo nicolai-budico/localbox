@@ -1,0 +1,53 @@
+name: test
+services:
+
+  db-main:
+    networks:
+      - test-net
+    image: test/service/db/main:latest
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U postgres
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  be-api:
+    networks:
+      - test-net
+    image: test/service/be/api:latest
+    ports:
+      - 8080:8080
+    depends_on:
+      - db-main
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:8080/actuator/health
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  proxy:
+    networks:
+      - test-net
+    image: test/service/proxy:latest
+    ports:
+      - 80:80
+    restart: unless-stopped
+
+networks:
+  test-net:
+    driver: bridge
+
+volumes:
+  db_data: {}

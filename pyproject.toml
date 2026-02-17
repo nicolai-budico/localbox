@@ -1,0 +1,71 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "localbox"
+version = "0.1.0"
+description = "Development environment orchestrator for Git repos, Docker builds, and service management"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    { name = "Localbox Team" }
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Build Tools",
+]
+dependencies = [
+    "click>=8.0",
+    "loguru>=0.7",
+    "pyyaml>=6.0",
+    "rich>=13.0",
+    "toposort>=1.10",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-ruff>=0.4.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+    "types-PyYAML",
+]
+
+[project.scripts]
+localbox = "localbox.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/localbox/localbox"
+Documentation = "https://github.com/localbox/localbox#readme"
+Repository = "https://github.com/localbox/localbox"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/localbox"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["src", "tests"]
+addopts = ["--ruff"]
