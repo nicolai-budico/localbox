@@ -75,10 +75,14 @@ def build_image(
     context_path = dockerfile_path.parent
 
     cmd = [
-        "docker", "buildx", "build",
+        "docker",
+        "buildx",
+        "build",
         "--load",  # Load into local docker daemon
-        "-t", target_tag,
-        "-f", str(dockerfile_path),
+        "-t",
+        target_tag,
+        "-f",
+        str(dockerfile_path),
     ]
 
     if no_cache:
@@ -94,18 +98,18 @@ def build_image(
         # For builder, usually 1 project (the one being built)
         if projects:
             project = projects[0]
-            src_dir = solution.directories.projects / (project.local_name or project.name)
+            src_dir = solution.directories.projects / project.path_name
             cmd.extend(["--build-context", f"project={src_dir}"])
 
-            name = project.local_name or project.name
+            name = project.path_name
             if name != "project":
                 cmd.extend(["--build-context", f"{name}={src_dir}"])
 
     elif image_type == "service":
         # For service, inject all projects by name
         for project in projects:
-            src_dir = solution.directories.projects / (project.local_name or project.name)
-            name = project.local_name or project.name
+            src_dir = solution.directories.projects / project.path_name
+            name = project.path_name
             cmd.extend(["--build-context", f"{name}={src_dir}"])
 
     # Append main context

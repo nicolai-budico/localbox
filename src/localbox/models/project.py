@@ -72,10 +72,7 @@ class Project:
     local_name: str | None = field(default=None, repr=False)
 
     def __post_init__(
-        self,
-        repo: str | None,
-        branch: str | None,
-        deps: list[Project] | None
+        self, repo: str | None, branch: str | None, deps: list[Project] | None
     ) -> None:
         # Build GitConfig from convenience params if needed
         if self.git is None and repo is not None:
@@ -92,10 +89,20 @@ class Project:
             elif self.local_name is None:
                 self.local_name = self.name
 
+    @property
+    def path_name(self) -> str:
+        """Short filesystem-safe name: local_name if grouped, else name.
+
+        Raises ValueError if both are None (the project was never loaded/named).
+        """
+        name = self.local_name or self.name
+        if name is None:
+            raise ValueError("Project has no name — this is a config loading bug")
+        return name
+
     def get_patches_dir(self, solution_root: Path) -> Path | None:
         """Return patches dir: ./patches/<local_name>/."""
-        name = self.local_name or self.name
-        patches_dir = solution_root / "patches" / name
+        patches_dir = solution_root / "patches" / self.path_name
         return patches_dir if patches_dir.exists() else None
 
     def get_script_path(self, script_name: str, solution_root: Path) -> Path | None:
@@ -177,6 +184,7 @@ class JavaProject(Project):
         # Normalize jdk to JDK instance
         if isinstance(self.jdk, int):
             from localbox.models.jdk import JDK
+
             self.jdk = JDK(self.jdk)
 
     def artifact(self, path: str = "") -> JavaArtifact:
@@ -228,4 +236,5 @@ class NodeProject(Project):
         # Set default builder if none provided
         if self.builder is None:
             from localbox.models.builder import node
+
             self.builder = node()

@@ -23,12 +23,12 @@ class ComposeConfig:
     depends_on: list[Service] = field(default_factory=list)
     links: list[str] = field(default_factory=list)  # "service:alias" format
     environment: dict[str, str] = field(default_factory=dict)
-    volumes: Volume | list[Volume] = field(default_factory=list)
+    volumes: list[Volume] = field(default_factory=list)
     healthcheck: HealthCheck | None = None
 
     def __post_init__(self) -> None:
-        if isinstance(self.volumes, Volume):
-            self.volumes = [self.volumes]
+        if isinstance(self.volumes, Volume):  # type: ignore[arg-type]
+            self.volumes = [self.volumes]  # type: ignore[assignment]
 
     def get_depends_on_names(self) -> list[str]:
         """Resolve depends_on Service objects to names."""
@@ -74,6 +74,17 @@ class Service:
                 self.local_name = self.name
 
     @property
+    def path_name(self) -> str:
+        """Short filesystem-safe name: local_name if grouped, else name.
+
+        Raises ValueError if both are None (the service was never loaded/named).
+        """
+        name = self.local_name or self.name
+        if name is None:
+            raise ValueError("Service has no name — this is a config loading bug")
+        return name
+
+    @property
     def compose_name(self) -> str:
         """Compose service name used in docker-compose.yml and docker compose commands."""
         return self.compose.service_name or (self.name or "").replace(":", "-")
@@ -107,5 +118,3 @@ class Service:
     def container_name(self, compose_project: str) -> str:
         """Get the Docker container name for this service."""
         return f"{compose_project}-{self.compose_name}"
-
-

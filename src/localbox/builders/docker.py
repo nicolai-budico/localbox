@@ -12,6 +12,7 @@ from rich.console import Console
 
 from localbox.builders.image_builder import prepare_docker_image
 from localbox.config import Solution
+from localbox.models.docker_image import DockerImage
 from localbox.models.service import Service
 
 console = Console()
@@ -28,6 +29,8 @@ class _DockerfileService(Protocol):
     to be used; an empty list signals "no custom build needed" (e.g. a
     TomcatService with no webapps configured).
     """
+
+    image: DockerImage
 
     def generate_dockerfile(self, solution: Solution) -> str: ...
     def build_contexts(self, solution: Solution) -> list[tuple[str, Path]]: ...
@@ -47,9 +50,7 @@ def build_service_image(
         if isinstance(service, _DockerfileService):
             contexts = service.build_contexts(solution)
             if contexts:
-                return _build_dockerfile_service(
-                    solution, service, contexts, verbose, no_cache
-                )
+                return _build_dockerfile_service(solution, service, contexts, verbose, no_cache)
 
         prepare_docker_image(
             solution,
@@ -92,10 +93,14 @@ def _build_dockerfile_service(
         target_tag = f"{solution.name}/service/{service.image.name}:latest"
 
         cmd = [
-            "docker", "buildx", "build",
+            "docker",
+            "buildx",
+            "build",
             "--load",
-            "-t", target_tag,
-            "-f", str(dockerfile_path),
+            "-t",
+            target_tag,
+            "-f",
+            str(dockerfile_path),
         ]
 
         if no_cache:

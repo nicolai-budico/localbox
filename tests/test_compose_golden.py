@@ -187,6 +187,7 @@ class TestHealthCheckSerialisation:
     def test_spring_boot_check_is_http_check(self):
         """SpringBootCheck must be an HttpCheck so it inherits all HTTP defaults."""
         from localbox.models.healthcheck import HttpCheck
+
         assert isinstance(SpringBootCheck(), HttpCheck)
 
 
@@ -195,11 +196,13 @@ class TestSpringBootServiceHealthcheck:
 
     def _make_project(self):
         from localbox.models.project import JavaProject
+
         return JavaProject("api", repo="git@example.com/api.git")
 
     def test_auto_healthcheck_default_port(self):
         """SpringBootService generates SpringBootCheck on port 8080 by default."""
         from localbox.library.spring_boot_service import SpringBootService
+
         project = self._make_project()
         svc = SpringBootService(name="be:api", project=project)
         assert isinstance(svc.compose.healthcheck, SpringBootCheck)
@@ -208,6 +211,7 @@ class TestSpringBootServiceHealthcheck:
     def test_auto_healthcheck_custom_port(self):
         """SpringBootService uses server_port for the generated check URL."""
         from localbox.library.spring_boot_service import SpringBootService
+
         project = self._make_project()
         svc = SpringBootService(name="be:api", project=project, server_port=9090)
         assert isinstance(svc.compose.healthcheck, SpringBootCheck)
@@ -216,6 +220,7 @@ class TestSpringBootServiceHealthcheck:
     def test_opt_out_disables_healthcheck(self):
         """healthcheck=None must leave compose.healthcheck as None."""
         from localbox.library.spring_boot_service import SpringBootService
+
         project = self._make_project()
         svc = SpringBootService(name="be:api", project=project, healthcheck=None)
         assert svc.compose.healthcheck is None
@@ -223,6 +228,7 @@ class TestSpringBootServiceHealthcheck:
     def test_custom_healthcheck_override(self):
         """A caller-supplied HealthCheck is used as-is, not replaced."""
         from localbox.library.spring_boot_service import SpringBootService
+
         project = self._make_project()
         custom = HttpCheck(url="http://localhost:8080/health")
         svc = SpringBootService(name="be:api", project=project, healthcheck=custom)
@@ -235,6 +241,7 @@ class TestSpringBootServiceHealthcheck:
         ``healthcheck=`` parameter instead of inside ComposeConfig.
         """
         from localbox.library.spring_boot_service import SpringBootService
+
         project = self._make_project()
         svc = SpringBootService(
             name="be:api",

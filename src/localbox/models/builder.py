@@ -85,7 +85,7 @@ class Builder:
     script: str | None = None  # Script file to mount and run
 
     # Container config
-    volumes: Volume | list[Volume] = field(default_factory=list)
+    volumes: list[Volume] = field(default_factory=list)
     environment: dict[str, str] = field(default_factory=dict)
     entrypoint: str | None = None  # Override entrypoint
     workdir: str = "/var/src"
@@ -95,8 +95,8 @@ class Builder:
     timeout: int | None = None
 
     def __post_init__(self) -> None:
-        if isinstance(self.volumes, Volume):
-            self.volumes = [self.volumes]
+        if isinstance(self.volumes, Volume):  # type: ignore[arg-type]
+            self.volumes = [self.volumes]  # type: ignore[assignment]
 
     @property
     def uses_dockerfile(self) -> bool:
@@ -228,7 +228,11 @@ class GradleBuilder(JavaBuilder):
             ]
         if not self.command_list and not self.command:
             self.command_list = [
-                "gradle", "build", "-x", "test", "--no-daemon",
+                "gradle",
+                "build",
+                "-x",
+                "test",
+                "--no-daemon",
                 "-Dmaven.repo.local=/var/maven/.m2/repository",
             ]
             self.environment = {
@@ -268,7 +272,8 @@ class GradleBuilder(JavaBuilder):
         excluded_prefixes = ("original-",)
 
         filtered = [
-            p for p in candidates
+            p
+            for p in candidates
             if not any(suf in p.name for suf in excluded_suffixes)
             and not any(p.name.startswith(pre) for pre in excluded_prefixes)
         ]
@@ -277,6 +282,7 @@ class GradleBuilder(JavaBuilder):
 
 
 # Factory functions for convenience
+
 
 def named_volume(name: str, container: str, readonly: bool = False) -> NamedVolume:
     """Create a Docker named volume mount."""
@@ -322,10 +328,7 @@ def node(version: int = 20) -> Builder:
         version: Node.js major version (e.g. 18, 20, 22)
     """
     return Builder(
-        docker_image=DockerImage(
-            name=f"node-{version}",
-            image=f"node:{version}"
-        ),
+        docker_image=DockerImage(name=f"node-{version}", image=f"node:{version}"),
         command="npm ci && npm run build",
         volumes=[
             CacheVolume(name="node", container="/home/node/.npm"),

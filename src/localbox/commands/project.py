@@ -65,7 +65,7 @@ def clone_projects(
 
 def clone_project(solution: Solution, project: Project, verbose: bool = False) -> None:
     """Clone a single project repository."""
-    target_dir = solution.directories.projects / (project.local_name or project.name)
+    target_dir = solution.directories.projects / project.path_name
 
     if target_dir.exists():
         logger.debug("clone skip {}: already exists at {}", project.name, target_dir)
@@ -151,7 +151,7 @@ def fetch_projects(
 
 def fetch_project(solution: Solution, project: Project, verbose: bool = False) -> None:
     """Fetch a single project repository."""
-    target_dir = solution.directories.projects / (project.local_name or project.name)
+    target_dir = solution.directories.projects / project.path_name
 
     if not target_dir.exists():
         logger.debug("fetch skip {}: not cloned", project.name)
@@ -200,7 +200,7 @@ def switch_project(
     verbose: bool = False,
 ) -> None:
     """Switch branch for a single project."""
-    target_dir = solution.directories.projects / (project.local_name or project.name)
+    target_dir = solution.directories.projects / project.path_name
 
     if not target_dir.exists():
         logger.debug("switch skip {}: not cloned", project.name)
@@ -265,9 +265,10 @@ def resolve_build_order(solution: Solution, projects: list[Project]) -> list[Pro
     graph: dict[str, set[str]] = {}
 
     for project in projects:
-        deps = set()
+        assert project.name is not None, "Project has no name — config loading bug"
+        deps: set[str] = set()
         for dep in project.depends_on:
-            # dep is a Project object
+            assert dep.name is not None, "Dependency has no name — config loading bug"
             deps.add(dep.name)
         graph[project.name] = deps
 
@@ -307,7 +308,7 @@ def build_project(
     solution: Solution, project: Project, verbose: bool = False, no_cache: bool = False
 ) -> bool:
     """Build a single project. Returns True on success, False on failure."""
-    source_dir = solution.directories.projects / (project.local_name or project.name)
+    source_dir = solution.directories.projects / project.path_name
 
     if not source_dir.exists():
         logger.debug("build skip {}: not cloned", project.name)
@@ -321,7 +322,7 @@ def build_project(
 
     logs_dir = solution.directories.build / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
-    log_name = (project.local_name or project.name).replace(":", "-")
+    log_name = project.path_name.replace(":", "-")
     log_path = logs_dir / f"{log_name}.log"
 
     success = run_builder(
@@ -355,7 +356,7 @@ def show_project_status(
         if not isinstance(project, Project):
             continue
 
-        project_dir = solution.directories.projects / (project.local_name or project.name)
+        project_dir = solution.directories.projects / project.path_name
         cloned = project_dir.exists()
 
         # Branch

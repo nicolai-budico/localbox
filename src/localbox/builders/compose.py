@@ -27,7 +27,7 @@ class _NoAliasDumper(yaml.SafeDumper):
     def ignore_aliases(self, data: Any) -> bool:
         return True
 
-    def increase_indent(self, flow=False, indentless=False):
+    def increase_indent(self, flow: bool = False, indentless: bool = False) -> None:
         # Force indented sequences so list items always indent under their key
         return super().increase_indent(flow=flow, indentless=False)
 
@@ -223,8 +223,10 @@ def generate_service_definition(solution: Solution, service: Service) -> dict:
 
     # Links
     if service.compose.links:
-        links = [link.replace(":", "-", 1) if ":" in link.split(":")[0] else link
-                 for link in service.compose.links]
+        links = [
+            link.replace(":", "-", 1) if ":" in link.split(":")[0] else link
+            for link in service.compose.links
+        ]
         service_def["links"] = links
 
     # Healthcheck

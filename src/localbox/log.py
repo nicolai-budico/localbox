@@ -5,6 +5,7 @@ Logs are written to <solution_root>/.logs/localbox.log with size-based rotation.
 """
 
 import sys
+import types
 from pathlib import Path
 
 from loguru import logger
@@ -39,13 +40,15 @@ def setup_logging(solution_root: Path) -> None:
         enqueue=False,
     )
 
-    def _excepthook(exc_type, exc_value, exc_traceback):
+    def _excepthook(
+        exc_type: type[BaseException],
+        exc_value: BaseException,
+        exc_traceback: types.TracebackType | None,
+    ) -> None:
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
             return
-        logger.opt(exception=(exc_type, exc_value, exc_traceback)).critical(
-            "Unhandled exception"
-        )
+        logger.opt(exception=(exc_type, exc_value, exc_traceback)).critical("Unhandled exception")
         # Also surface the error to the user — the log handler swallows stderr.
         sys.__excepthook__(exc_type, exc_value, exc_traceback)
 

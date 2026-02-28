@@ -15,7 +15,7 @@ def solution_with_groups():
     """Create a solution with grouped projects and services."""
     temp_dir = Path(tempfile.mkdtemp())
 
-    (temp_dir / CONFIG_FILE).write_text('''\
+    (temp_dir / CONFIG_FILE).write_text("""\
 from localbox.models import (
     Project, JavaProject, maven, node,
     Service, DockerImage, ComposeConfig,
@@ -71,7 +71,7 @@ be_processor = Service(
     image=DockerImage(dockerfile="assets/Dockerfile.processor"),
     compose=ComposeConfig(order=10, ports=["8080:8080"]),
 )
-''')
+""")
 
     solution = load_solution(temp_dir)
 

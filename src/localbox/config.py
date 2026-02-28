@@ -47,8 +47,10 @@ def _env_to_dict(env: Any) -> dict[str, str | None]:
     result: dict[str, str | None] = {}
 
     for key, val in vars(type(env)).items():
-        if key.startswith("_") or callable(val) or isinstance(
-            val, (classmethod, staticmethod, property)
+        if (
+            key.startswith("_")
+            or callable(val)
+            or isinstance(val, (classmethod, staticmethod, property))
         ):
             continue
         result[key] = val
@@ -199,7 +201,7 @@ def _derive_group_from_module(module: ModuleType) -> str | None:
     for prefix in ("projects.", "services."):
         if module_name.startswith(prefix):
             # Remove prefix and convert dots to colons
-            group_path = module_name[len(prefix):]
+            group_path = module_name[len(prefix) :]
             return group_path.replace(".", ":") if group_path else None
 
     return None

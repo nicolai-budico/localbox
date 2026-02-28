@@ -61,7 +61,7 @@ class TomcatService(JavaService):
         contexts = []
         for artifact in self.webapps.values():
             project = artifact.project
-            project_local = project.local_name or project.name
+            project_local = project.path_name
             src_dir = solution.directories.projects / project_local
             contexts.append((project_local, src_dir))
         return contexts
@@ -94,7 +94,7 @@ class TomcatService(JavaService):
                 continue
 
             # Get project directory
-            project_local = project.local_name or project.name
+            project_local = project.path_name
             project_dir = projects_dir / project_local
 
             if java_artifact.path:
@@ -112,7 +112,7 @@ class TomcatService(JavaService):
                 artifacts = list(project_dir.glob(project.builder.get_artifact_pattern(packaging)))
 
                 # Filter artifacts for Gradle (exclude -plain, -sources, etc.)
-                if hasattr(project.builder, 'find_artifact'):
+                if hasattr(project.builder, "find_artifact"):
                     artifact = project.builder.find_artifact(project_dir, packaging)
                     artifacts = [artifact] if artifact else []
 
@@ -123,7 +123,7 @@ class TomcatService(JavaService):
                     )
 
                 if artifacts:
-                    rel_path = artifacts[0].relative_to(project_dir)
+                    rel_path = str(artifacts[0].relative_to(project_dir))
                     lines.append(
                         f"COPY --from={project_local} {rel_path} "
                         f"/usr/local/tomcat/webapps/{webapp_name}.{packaging.value}"
@@ -137,15 +137,19 @@ class TomcatService(JavaService):
                     )
 
         if self.jvm_opts:
-            lines.extend([
-                "",
-                f'ENV JAVA_OPTS="{self.jvm_opts}"',
-            ])
+            lines.extend(
+                [
+                    "",
+                    f'ENV JAVA_OPTS="{self.jvm_opts}"',
+                ]
+            )
 
-        lines.extend([
-            "",
-            "EXPOSE 8080",
-            'CMD ["catalina.sh", "run"]',
-        ])
+        lines.extend(
+            [
+                "",
+                "EXPOSE 8080",
+                'CMD ["catalina.sh", "run"]',
+            ]
+        )
 
         return "\n".join(lines)

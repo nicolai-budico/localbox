@@ -21,8 +21,7 @@ def temp_solution():
     temp_dir = Path(tempfile.mkdtemp())
 
     (temp_dir / CONFIG_FILE).write_text(
-        'from localbox.models import SolutionConfig\n'
-        'config = SolutionConfig()\n'
+        "from localbox.models import SolutionConfig\nconfig = SolutionConfig()\n"
     )
 
     yield temp_dir
@@ -33,7 +32,7 @@ def temp_solution():
 @pytest.fixture
 def temp_solution_with_projects(temp_solution):
     """Create a solution with sample projects and services defined in Python."""
-    (temp_solution / CONFIG_FILE).write_text('''\
+    (temp_solution / CONFIG_FILE).write_text("""\
 from localbox.models import (
     SolutionConfig, Project, JavaProject, maven, gradle, node,
     Service, DockerImage, ComposeConfig,
@@ -71,7 +70,7 @@ db_main = Service(
         environment={"POSTGRES_USER": "postgres"},
     ),
 )
-''')
+""")
 
     return temp_solution
 
@@ -172,7 +171,7 @@ class TestLoadSolution:
 
     def test_custom_config(self, tmp_path):
         """Should apply custom SolutionConfig values."""
-        (tmp_path / CONFIG_FILE).write_text('''\
+        (tmp_path / CONFIG_FILE).write_text("""\
 from localbox.models import SolutionConfig
 config = SolutionConfig(
     name="mycoolproject",
@@ -180,7 +179,7 @@ config = SolutionConfig(
     compose_project="myproject",
     network="mynet",
 )
-''')
+""")
         solution = load_solution(tmp_path)
 
         assert solution.name == "mycoolproject"
@@ -202,10 +201,10 @@ class TestDirectories:
 
     def test_custom_build_dir(self, tmp_path):
         """Should use custom build directory from SolutionConfig."""
-        (tmp_path / CONFIG_FILE).write_text('''\
+        (tmp_path / CONFIG_FILE).write_text("""\
 from localbox.models import SolutionConfig
 config = SolutionConfig(build_dir="output")
-''')
+""")
         solution = load_solution(tmp_path)
 
         assert solution.directories.build == tmp_path / "output"
@@ -219,6 +218,7 @@ class TestEnvToDict:
     def test_dict_env_passthrough(self):
         """Should return a copy of a dict env unchanged."""
         from localbox.config import _env_to_dict
+
         env = {"DB_HOST": "localhost", "DB_PASS": None}
         result = _env_to_dict(env)
         assert result == {"DB_HOST": "localhost", "DB_PASS": None}
@@ -228,8 +228,8 @@ class TestEnvToDict:
         from localbox.config import _env_to_dict
 
         class Env:
-            DB_HOST: str      = "localhost"
-            DB_PASS: str|None = None
+            DB_HOST: str = "localhost"
+            DB_PASS: str | None = None
 
         result = _env_to_dict(Env())
         assert result == {"DB_HOST": "localhost", "DB_PASS": None}
@@ -239,7 +239,7 @@ class TestEnvToDict:
         from localbox.config import _env_to_dict
 
         class Env:
-            DB_PASS: str|None = None
+            DB_PASS: str | None = None
 
         instance = Env()
         instance.DB_PASS = "secret"
@@ -252,7 +252,9 @@ class TestEnvToDict:
 
         class Env:
             DB_HOST: str = "localhost"
-            def helper(self): pass
+
+            def helper(self):
+                pass
 
         result = _env_to_dict(Env())
         assert "helper" not in result
@@ -275,12 +277,11 @@ class TestSolutionOverrideFile:
     def test_override_file_mutates_config_env_dict(self, tmp_path):
         """solution-override.py should be able to mutate dict-based config.env."""
         (tmp_path / CONFIG_FILE).write_text(
-            'from localbox.models import SolutionConfig\n'
+            "from localbox.models import SolutionConfig\n"
             'config = SolutionConfig(env={"DB_PASS": None, "DB_HOST": "localhost"})\n'
         )
         (tmp_path / "solution-override.py").write_text(
-            'import solution\n'
-            'solution.config.env["DB_PASS"] = "secret"\n'
+            'import solution\nsolution.config.env["DB_PASS"] = "secret"\n'
         )
 
         solution = load_solution(tmp_path)
@@ -290,15 +291,14 @@ class TestSolutionOverrideFile:
     def test_override_file_mutates_class_env(self, tmp_path):
         """solution-override.py should be able to mutate class-based config.env."""
         (tmp_path / CONFIG_FILE).write_text(
-            'from localbox.models import SolutionConfig\n'
-            'class Env:\n'
+            "from localbox.models import SolutionConfig\n"
+            "class Env:\n"
             '    DB_HOST: str = "localhost"\n'
-            '    DB_PASS: str = None\n'
-            'config = SolutionConfig(env=Env())\n'
+            "    DB_PASS: str = None\n"
+            "config = SolutionConfig(env=Env())\n"
         )
         (tmp_path / "solution-override.py").write_text(
-            'import solution\n'
-            'solution.config.env.DB_PASS = "secret"\n'
+            'import solution\nsolution.config.env.DB_PASS = "secret"\n'
         )
 
         solution = load_solution(tmp_path)
@@ -308,13 +308,12 @@ class TestSolutionOverrideFile:
     def test_override_file_mutates_project_branch(self, tmp_path):
         """solution-override.py should be able to mutate project branch."""
         (tmp_path / CONFIG_FILE).write_text(
-            'from localbox.models import SolutionConfig, Project\n'
-            'config = SolutionConfig()\n'
+            "from localbox.models import SolutionConfig, Project\n"
+            "config = SolutionConfig()\n"
             'myproject = Project("myproject", repo="git@github.com:org/repo.git", branch="dev")\n'
         )
         (tmp_path / "solution-override.py").write_text(
-            'import solution\n'
-            'solution.config.build_dir = ".my-build"\n'
+            'import solution\nsolution.config.build_dir = ".my-build"\n'
         )
 
         solution = load_solution(tmp_path)
@@ -332,8 +331,8 @@ class TestProjectPath:
     def test_project_path_default_none(self, tmp_path):
         """Project.path should default to None."""
         (tmp_path / CONFIG_FILE).write_text(
-            'from localbox.models import SolutionConfig, Project\n'
-            'config = SolutionConfig()\n'
+            "from localbox.models import SolutionConfig, Project\n"
+            "config = SolutionConfig()\n"
             'myproject = Project("myproject", repo="git@github.com:org/repo.git")\n'
         )
         solution = load_solution(tmp_path)
@@ -342,13 +341,13 @@ class TestProjectPath:
     def test_override_sets_project_path(self, tmp_path):
         """solution-override.py should be able to set project.path."""
         (tmp_path / CONFIG_FILE).write_text(
-            'from localbox.models import SolutionConfig, Project\n'
-            'config = SolutionConfig()\n'
+            "from localbox.models import SolutionConfig, Project\n"
+            "config = SolutionConfig()\n"
             'myproject = Project("myproject", repo="git@github.com:org/repo.git")\n'
         )
         (tmp_path / "solution-override.py").write_text(
-            'import solution\n'
-            'from solution import myproject\n'
+            "import solution\n"
+            "from solution import myproject\n"
             'myproject.path = "/home/dev/my-checkout"\n'
         )
         solution = load_solution(tmp_path)

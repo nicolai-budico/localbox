@@ -43,6 +43,7 @@ pass_context = click.make_pass_decorator(LocalboxContext, ensure=True)
 def load_solution_or_exit() -> Solution:
     """Load solution or exit with error message."""
     from localbox.log import setup_logging
+
     try:
         solution = load_solution()
         setup_logging(solution.root)
@@ -53,9 +54,7 @@ def load_solution_or_exit() -> Solution:
         sys.exit(1)
 
 
-def complete_targets(
-    ctx: click.Context, param: click.Parameter, incomplete: str
-) -> list[str]:
+def complete_targets(ctx: click.Context, param: click.Parameter, incomplete: str) -> list[str]:
     """Shell completion for targets."""
     try:
         solution = load_solution()
@@ -115,8 +114,7 @@ def init(force: bool) -> None:
 
     if config_path.exists() and not force:
         console.print(
-            f"[yellow]Warning:[/yellow] {CONFIG_FILE} already exists. "
-            "Use --force to overwrite."
+            f"[yellow]Warning:[/yellow] {CONFIG_FILE} already exists. Use --force to overwrite."
         )
         sys.exit(1)
 
@@ -193,9 +191,7 @@ def doctor() -> None:
             check("Docker Engine", False, f"could not parse version from: {raw!r}")
 
         # Docker daemon running
-        result = subprocess.run(
-            ["docker", "info"], capture_output=True, text=True, timeout=5
-        )
+        result = subprocess.run(["docker", "info"], capture_output=True, text=True, timeout=5)
         daemon_ok = result.returncode == 0
         check(
             "Docker daemon",
@@ -204,9 +200,7 @@ def doctor() -> None:
         )
 
         # Docker Compose V2
-        result = subprocess.run(
-            ["docker", "compose", "version"], capture_output=True, text=True
-        )
+        result = subprocess.run(["docker", "compose", "version"], capture_output=True, text=True)
         if result.returncode == 0:
             raw = result.stdout.strip()  # "Docker Compose version v2.27.0"
             m = re.search(r"v?(\d+\.\d+\.\d+)", raw)
@@ -216,9 +210,7 @@ def doctor() -> None:
             check("Docker Compose V2", False, "not found — install the Compose plugin")
 
         # BuildKit / buildx
-        result = subprocess.run(
-            ["docker", "buildx", "version"], capture_output=True, text=True
-        )
+        result = subprocess.run(["docker", "buildx", "version"], capture_output=True, text=True)
         if result.returncode == 0:
             raw = result.stdout.strip().splitlines()[0]
             m = re.search(r"v?(\d+\.\d+\.\d+)", raw)
@@ -245,7 +237,9 @@ def doctor() -> None:
 @cli.command()
 @click.argument("targets", nargs=-1, shell_complete=complete_targets)
 @click.option(
-    "--build", "clean_build", is_flag=True,
+    "--build",
+    "clean_build",
+    is_flag=True,
     help="Remove entire .build/ directory (all caches and sources)",
 )
 @click.option(
@@ -283,7 +277,7 @@ def clean(targets: tuple[str, ...], clean_build: bool, clean_compose: bool) -> N
         for project in projects:
             if not isinstance(project, Project):
                 continue
-            source_dir = solution.directories.projects / (project.local_name or project.name)
+            source_dir = solution.directories.projects / project.path_name
             if source_dir.exists():
                 shutil.rmtree(source_dir)
                 console.print(f"[green]Removed[/green] {source_dir.relative_to(solution.root)}")
@@ -356,7 +350,7 @@ def _generate_override_template(solution: Solution) -> str:
     lines += [
         "",
         "# ── Solution settings ─────────────────────────────────────────────────",
-        f'# solution.config.build_dir = '
+        f"# solution.config.build_dir = "
         f'"{solution.config.build_dir if solution.config else ".build"}"',
     ]
 
@@ -369,15 +363,15 @@ def _generate_override_template(solution: Solution) -> str:
         ]
         for key, val in sorted(env_dict.items()):
             if is_class_env:
-                expr = f'solution.config.env.{key} = '
+                expr = f"solution.config.env.{key} = "
             else:
                 expr = f'solution.config.env["{key}"] = '
 
             if val is None:
-                lines.append(f'{expr}None  # REQUIRED — set a value')
+                lines.append(f"{expr}None  # REQUIRED — set a value")
             else:
                 quoted = f'"{val}"' if isinstance(val, str) else repr(val)
-                lines.append(f'# {expr}{quoted}')
+                lines.append(f"# {expr}{quoted}")
 
     # Project path overrides
     if solution.projects:
@@ -440,6 +434,14 @@ def list_cmd(target_type: str) -> None:
         list_services(solution)
 
 
+def _project_sort_key(p: Project) -> str:
+    return p.path_name
+
+
+def _service_sort_key(s: Service) -> str:
+    return s.path_name
+
+
 def list_projects(solution: Solution) -> None:
     """Display projects as a tree."""
     if not solution.projects:
@@ -451,15 +453,12 @@ def list_projects(solution: Solution) -> None:
     ungrouped = [p for p in solution.projects.values() if not p.group]
     groups = solution.get_project_groups()
 
-    for project in sorted(ungrouped, key=lambda p: p.name):
+    for project in sorted(ungrouped, key=_project_sort_key):
         add_project_to_tree(tree, project)
 
     for group in sorted(groups):
         group_tree = tree.add(f"[bold cyan]{group}/[/bold cyan]")
-        projects = sorted(
-            solution.get_projects_in_group(group),
-            key=lambda p: p.local_name or p.name
-        )
+        projects = sorted(solution.get_projects_in_group(group), key=_project_sort_key)
         for project in projects:
             add_project_to_tree(group_tree, project)
 
@@ -473,9 +472,9 @@ def add_project_to_tree(tree: Tree, project: Project) -> None:
     details = ""
     if project.builder and project.builder.docker_image:
         if project.builder.docker_image.image:
-             details = project.builder.docker_image.image
+            details = project.builder.docker_image.image
         elif project.builder.docker_image.dockerfile:
-             details = "Dockerfile"
+            details = "Dockerfile"
 
     tree.add(f"{name} [dim]{details}[/dim]")
 
@@ -489,15 +488,12 @@ def list_services(solution: Solution) -> None:
     tree = Tree("[bold]Services[/bold]")
 
     ungrouped = [s for s in solution.services.values() if not s.group]
-    for service in sorted(ungrouped, key=lambda s: s.name or ""):
+    for service in sorted(ungrouped, key=_service_sort_key):
         add_service_to_tree(tree, service)
 
     for group in sorted(solution.get_service_groups()):
         group_tree = tree.add(f"[bold cyan]{group}/[/bold cyan]")
-        services = sorted(
-            solution.get_services_in_group(group),
-            key=lambda s: s.local_name or s.name
-        )
+        services = sorted(solution.get_services_in_group(group), key=_service_sort_key)
         for service in services:
             add_service_to_tree(group_tree, service)
 

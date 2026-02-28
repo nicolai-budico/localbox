@@ -21,6 +21,7 @@ from localbox.models.solution_config import SolutionConfig
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_solution(tmp_path: Path, projects=None, services=None) -> Solution:
     build = tmp_path / ".build"
     config = SolutionConfig(name="test", compose_project="test", network="test-net")
@@ -48,6 +49,7 @@ def _runner() -> CliRunner:
 # Basic invocation
 # ---------------------------------------------------------------------------
 
+
 class TestBasicInvocation:
     def test_version(self):
         result = _runner().invoke(cli, ["--version"])
@@ -68,6 +70,7 @@ class TestBasicInvocation:
 # ---------------------------------------------------------------------------
 # localbox init
 # ---------------------------------------------------------------------------
+
 
 class TestInit:
     def test_init_creates_solution_py(self):
@@ -105,6 +108,7 @@ class TestInit:
 # Error: outside a solution directory
 # ---------------------------------------------------------------------------
 
+
 class TestOutsideSolution:
     """Commands that require a solution should exit 1 with a clear message."""
 
@@ -135,6 +139,7 @@ class TestOutsideSolution:
 # ---------------------------------------------------------------------------
 # localbox list
 # ---------------------------------------------------------------------------
+
 
 class TestList:
     def _solution(self, tmp_path):
@@ -187,6 +192,7 @@ class TestList:
 # localbox config
 # ---------------------------------------------------------------------------
 
+
 class TestConfig:
     def test_config_shows_solution_info(self, tmp_path):
         sol = _make_solution(tmp_path)
@@ -199,6 +205,7 @@ class TestConfig:
 # ---------------------------------------------------------------------------
 # localbox clean
 # ---------------------------------------------------------------------------
+
 
 class TestClean:
     def test_clean_no_args_shows_hint(self, tmp_path):
@@ -230,6 +237,7 @@ class TestClean:
 # localbox compose generate
 # ---------------------------------------------------------------------------
 
+
 class TestComposeGenerate:
     def test_generates_compose_file(self, tmp_path):
         service = Service(name="proxy", image=DockerImage(image="nginx:alpine"))
@@ -257,6 +265,7 @@ class TestComposeGenerate:
 # Plugin loading
 # ---------------------------------------------------------------------------
 
+
 class TestPluginLoading:
     """Tests for _load_plugins() entry-point discovery."""
 
@@ -268,6 +277,7 @@ class TestPluginLoading:
 
     def test_plugin_command_registered(self):
         """A well-formed plugin entry point adds its command to the CLI."""
+
         @click.command("hello")
         def hello_cmd():
             """Say hello."""

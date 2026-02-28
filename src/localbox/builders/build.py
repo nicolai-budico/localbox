@@ -22,6 +22,7 @@ from localbox.models.builder import (
     NamedVolume,
     Volume,
 )
+from localbox.models.jdk import JDK
 from localbox.models.project import JavaProject, Project
 
 if TYPE_CHECKING:
@@ -71,7 +72,7 @@ def _run_docker_with_cleanup(
     reader_thread = threading.Thread(target=_reader, daemon=True)
     reader_thread.start()
 
-    def cleanup(signum, frame) -> None:
+    def cleanup(signum: int, frame: object) -> None:
         console.print("\n[yellow]Interrupted, stopping container...[/yellow]")
         _kill_container(container_name)
         process.terminate()
@@ -86,8 +87,7 @@ def _run_docker_with_cleanup(
         return process.returncode
     except subprocess.TimeoutExpired:
         console.print(
-            f"\n[red]Build timed out after {timeout_minutes} minute(s).[/red] "
-            f"Stopping container..."
+            f"\n[red]Build timed out after {timeout_minutes} minute(s).[/red] Stopping container..."
         )
         _kill_container(container_name)
         process.kill()
@@ -124,7 +124,7 @@ def run_builder(
     if project.group:
         tag_name = f"{project.group}/{project.local_name}"
     else:
-        tag_name = project.local_name or project.name
+        tag_name = project.path_name
 
     try:
         image_tag = _resolve_builder_image(solution, project, builder, tag_name, verbose, no_cache)
@@ -144,11 +144,17 @@ def run_builder(
     container_name = f"localbox-build-{uuid.uuid4().hex[:8]}"
 
     docker_cmd = [
-        "docker", "run", "--rm",
-        "--name", container_name,
-        "--user", f"{uid}:{gid}",
-        "-v", f"{source_dir}:{builder.workdir}",
-        "-w", builder.workdir,
+        "docker",
+        "run",
+        "--rm",
+        "--name",
+        container_name,
+        "--user",
+        f"{uid}:{gid}",
+        "-v",
+        f"{source_dir}:{builder.workdir}",
+        "-w",
+        builder.workdir,
     ]
 
     # Entrypoint override
@@ -180,7 +186,8 @@ def run_builder(
         console.print(f"  $ {' '.join(docker_cmd)}")
 
     returncode = _run_docker_with_cleanup(
-        docker_cmd, container_name,
+        docker_cmd,
+        container_name,
         log_path=log_path,
         timeout_minutes=builder.timeout,
     )
@@ -210,12 +217,15 @@ def _resolve_builder_image(
     # Determine source image
     if isinstance(builder, JavaBuilder) and isinstance(project, JavaProject):
         # JavaBuilder resolves image using project's JDK
+        assert isinstance(project.jdk, JDK), "JavaProject.jdk should be JDK after __post_init__"
         source_image = builder.resolve_image_tag(project.jdk)
     elif builder.docker_image and builder.docker_image.image:
         source_image = builder.docker_image.image
     elif builder.uses_dockerfile:
         # Handle Dockerfile-based builders
         from localbox.builders.image_builder import build_image
+
+        assert builder.docker_image is not None
         target_tag = f"{solution.name}/builder/{tag_name}:latest"
         build_image(
             solution, builder.docker_image, target_tag, "builder", [project], verbose, no_cache

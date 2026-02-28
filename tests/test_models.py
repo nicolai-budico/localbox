@@ -256,14 +256,15 @@ class TestComposeConfigPorts:
 
     def test_volumes_list(self):
         """volumes= should accept a list of Volume instances."""
-        c = ComposeConfig(volumes=[
-            named_volume("pg_data", "/var/lib/postgresql/data"),
-            bind_volume("./init.sql", "/docker-entrypoint-initdb.d/init.sql", readonly=True),
-        ])
+        c = ComposeConfig(
+            volumes=[
+                named_volume("pg_data", "/var/lib/postgresql/data"),
+                bind_volume("./init.sql", "/docker-entrypoint-initdb.d/init.sql", readonly=True),
+            ]
+        )
         assert len(c.volumes) == 2
         assert isinstance(c.volumes[0], NamedVolume)
         assert isinstance(c.volumes[1], BindVolume)
-
 
 
 class TestService:
@@ -457,5 +458,3 @@ class TestJavaProject:
         assert p.local_name == "app"
         assert p.git is not None
         assert p.git.url == "git@example.com/app.git"
-
-

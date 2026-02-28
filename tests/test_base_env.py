@@ -31,6 +31,7 @@ class TestBaseEnv:
 
     def test_subclass_becomes_dataclass(self):
         """dataclasses.fields() should work on an explicitly decorated subclass."""
+
         @dataclasses.dataclass
         class Env(BaseEnv):
             db_host: str = env_field()
@@ -42,17 +43,20 @@ class TestBaseEnv:
     def test_rejects_plain_default(self):
         """BaseEnv subclass fields without env_field() should raise TypeError."""
         with pytest.raises(TypeError, match="must use env_field"):
+
             class Env(BaseEnv):
                 db_host: str = "localhost"
 
     def test_rejects_missing_default(self):
         """BaseEnv subclass fields with no default at all should raise TypeError."""
         with pytest.raises(TypeError, match="must use env_field"):
+
             class Env(BaseEnv):
                 db_host: str
 
     def test_class_attr_is_sentinel(self):
         """Class-level access should return the EnvField sentinel."""
+
         @dataclasses.dataclass
         class Env(BaseEnv):
             db_pass: str = env_field(is_secret=True)
@@ -62,6 +66,7 @@ class TestBaseEnv:
 
     def test_instance_has_correct_values(self):
         """Instance attributes should hold the passed values."""
+
         @dataclasses.dataclass
         class Env(BaseEnv):
             db_pass: str = env_field(is_secret=True)

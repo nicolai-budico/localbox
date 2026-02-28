@@ -34,7 +34,7 @@ class BaseEnv:
             DB_PASS: str = env_field(is_secret=True)
     """
 
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)
 
         # Validate all annotated fields use env_field().
@@ -42,7 +42,4 @@ class BaseEnv:
         for name in cls.__annotations__:
             default = cls.__dict__.get(name, _MISSING)
             if default is _MISSING or not isinstance(default, EnvField):
-                raise TypeError(
-                    f"{cls.__name__}.{name}: must use env_field(), "
-                    f"got {default!r}"
-                )
+                raise TypeError(f"{cls.__name__}.{name}: must use env_field(), got {default!r}")

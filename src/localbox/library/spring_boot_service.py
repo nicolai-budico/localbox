@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from localbox.library.java_service import JavaService
 from localbox.models.healthcheck import HealthCheck, SpringBootCheck
+from localbox.models.jdk import JDK
 from localbox.models.project import JavaArtifact, JavaProject
 
 if TYPE_CHECKING:
@@ -83,7 +84,7 @@ class SpringBootService(JavaService):
         project = self.project
         if not isinstance(project, JavaProject):
             return []
-        project_local = project.local_name or project.name
+        project_local = project.path_name
         src_dir = solution.directories.projects / project_local
         return [(project_local, src_dir)]
 
@@ -103,8 +104,9 @@ class SpringBootService(JavaService):
         project = self.project
         assert isinstance(project, JavaProject)
 
-        project_local = project.local_name or project.name
+        project_local = project.path_name
         project_dir = projects_dir / project_local
+        assert isinstance(project.jdk, JDK), "JavaProject.jdk should be JDK after __post_init__"
         runtime_image = project.jdk.runtime_image()
 
         # Resolve artifact path: explicit > auto-detect > glob fallback
