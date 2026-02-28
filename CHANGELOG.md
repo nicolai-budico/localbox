@@ -6,20 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.1.0] - 2026-02-28
 
-### Added
+Initial release.
 
-- `SolutionConfig` — typed, generic solution configuration with `BaseEnv` for secret management
-- `Project`, `JavaProject`, `NodeProject` — Git repository models with builder configuration
-- `Builder` — Docker-based build runner with `maven()`, `gradle()`, `node()` factory functions
-- `Service`, `ComposeConfig` — Docker Compose service model with dependency ordering
-- `DockerImage` — universal image model for both builders and services
-- Volume types: `BindVolume`, `CacheVolume`, `NamedVolume` with factory helpers
-- JDK providers: `corretto()`, `temurin()`, `graalvm()` with version resolution
-- Health checks: `HealthCheck`, `HttpCheck`, `PgCheck`, `SpringBootCheck`
-- Library services: `SpringBootService`, `TomcatService` — auto-generate Dockerfiles
-- CLI commands: `init`, `init-override`, `doctor`, `clone`, `fetch`, `switch`, `build`, `status`, `list`, `compose generate`, `clean`, `completion`
-- Colon-separated target syntax: `projects:group:name`, `services:group:name`
-- Auto-patching: applies `*.patch` files from `patches/<project>/` after clone
-- Shared build cache volumes for Maven, Gradle, and npm
-- `solution-override.py` — gitignored per-developer secrets and local overrides
-- Spring PetClinic REST example at `example/`
+### Features
+
+- **Solution model** — `SolutionConfig` with generic `BaseEnv` for typed, secret-aware environment configuration; `solution-override.py` for gitignored per-developer overrides
+- **Project model** — `Project`, `JavaProject`, `NodeProject` with Git configuration, builder assignment, and colon-grouped names (`libs:utils`)
+- **Builder model** — Docker-based build runner; `maven()`, `gradle()`, `node()` factory functions; shared cache volumes for Maven, Gradle, and npm; script and timeout support
+- **Service model** — `Service` and `ComposeConfig` with dependency ordering, health checks, and volume mounts
+- **Docker image model** — `DockerImage` used uniformly for both builders and services
+- **JDK providers** — `corretto()`, `temurin()`, `graalvm()` with runtime image resolution
+- **Health checks** — `HttpCheck`, `PgCheck`, `SpringBootCheck`
+- **Library services** — `SpringBootService` and `TomcatService` auto-generate Dockerfiles from project artifacts
+- **CLI** — `init`, `init-override`, `doctor`, `clone`, `fetch`, `switch`, `build`, `status`, `list`, `compose generate`, `clean`, `completion`
+- **Target syntax** — colon-separated `projects:group:name` and `services:group:name`
+- **Auto-patching** — applies `*.patch` files from `patches/<project>/` on clone
+- **Example** — Spring PetClinic REST at `example/`
