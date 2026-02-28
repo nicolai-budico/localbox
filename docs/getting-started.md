@@ -29,7 +29,7 @@ Requirements:
 ## Step 1 — Install Localbox
 
 ```bash
-pip install "git+https://github.com/localbox/localbox.git"
+pip install "git+https://github.com/nicolai-budico/localbox.git"
 ```
 
 Verify:

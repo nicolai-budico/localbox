@@ -10,11 +10,11 @@
 ### GitHub-Based Installation
 
 ```bash
-pip install "git+https://github.com/localbox/localbox.git"
+pip install "git+https://github.com/nicolai-budico/localbox.git"
 ```
 
 - Tag releases (`v0.3.0`, `v0.3.1`, etc.) on GitHub
-- Users install pinned versions: `pip install "git+https://github.com/localbox/localbox.git@v0.3.0"`
+- Users install pinned versions: `pip install "git+https://github.com/nicolai-budico/localbox.git@v0.3.0"`
 - Bump `Development Status` classifier to `4 - Beta`
 - Add status badges to README (CI passing, version, Python versions)
 

@@ -2,6 +2,7 @@
 
 Development environment orchestrator for Git repositories, Docker builds, and service management.
 
+[![CI](https://github.com/nicolai-budico/localbox/actions/workflows/ci.yml/badge.svg)](https://github.com/nicolai-budico/localbox/actions)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -38,13 +39,13 @@ docker compose up -d      # start everything
 ## Installation
 
 ```bash
-pip install "git+https://github.com/localbox/localbox.git"
+pip install "git+https://github.com/nicolai-budico/localbox.git"
 ```
 
 Or install a pinned version:
 
 ```bash
-pip install "git+https://github.com/localbox/localbox.git@v0.3.0"
+pip install "git+https://github.com/nicolai-budico/localbox.git@v0.1.0"
 ```
 
 **Requirements:** Python 3.10+, Docker Engine 20.10+, Docker Compose V2, Git 2.0+

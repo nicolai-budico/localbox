@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [
-    { name = "Localbox Team" }
+    { name = "Nicolai Budico" }
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -46,9 +46,9 @@ dev = [
 localbox = "localbox.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/localbox/localbox"
-Documentation = "https://github.com/localbox/localbox#readme"
-Repository = "https://github.com/localbox/localbox"
+Homepage = "https://github.com/nicolai-budico/localbox"
+Documentation = "https://github.com/nicolai-budico/localbox#readme"
+Repository = "https://github.com/nicolai-budico/localbox"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/localbox"]
