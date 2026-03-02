@@ -1,6 +1,9 @@
 """CLI entry point for localbox."""
 
+import ast
+import re
 import sys
+from datetime import datetime, timezone
 from importlib.metadata import entry_points
 from pathlib import Path
 
@@ -17,6 +20,7 @@ from localbox.config import (
     SolutionNotFoundError,
     _env_to_dict,
     create_default_solution,
+    find_solution_root,
     load_solution,
 )
 from localbox.models.project import Project
@@ -303,20 +307,127 @@ def clean(targets: tuple[str, ...], clean_build: bool, clean_compose: bool) -> N
             console.print("[yellow]Skip[/yellow] docker-compose.yml (does not exist)")
 
 
-@cli.command("init-override")
-@click.option("--force", "-f", is_flag=True, help="Overwrite existing solution-override.py.")
-def init_override(force: bool) -> None:
-    """Create solution-override.py with per-developer override template."""
-    solution = load_solution_or_exit()
+class _ParsedOverride:
+    """Values extracted from an existing solution-override.py."""
 
-    override_path = solution.root / OVERRIDE_FILE
-    if override_path.exists() and not force:
-        console.print(
-            f"[yellow]Warning:[/yellow] {OVERRIDE_FILE} already exists. Use --force to overwrite."
-        )
+    def __init__(self) -> None:
+        # env key → literal value string, e.g. '"secret"' or "'pass'"
+        self.env: dict[str, str] = {}
+        # solution.config.ATTR → literal value string
+        self.config: dict[str, str] = {}
+        # "p.group.name" → {"path": literal, "branch": literal}
+        self.projects: dict[str, dict[str, str]] = {}
+
+
+def _rhs_source(line: str) -> str | None:
+    """Extract the source text of the assignment RHS using the AST.
+
+    Using ast.parse() rather than regex ensures that '#' characters inside
+    string literals are never mistaken for comment markers.
+    Returns None if the line is not a simple assignment or cannot be parsed.
+    """
+    try:
+        tree = ast.parse(line, mode="exec")
+    except SyntaxError:
+        return None
+    if not tree.body or not isinstance(tree.body[0], ast.Assign):
+        return None
+    node = tree.body[0].value
+    if node.end_col_offset is None:
+        return None
+    return line[node.col_offset : node.end_col_offset]
+
+
+def _parse_existing_override(path: Path) -> _ParsedOverride:
+    """Extract uncommented, non-None assignments from an existing solution-override.py.
+
+    Only reads lines that were actively set (not commented out and not None),
+    so the values can be carried into a freshly generated template.
+    """
+    result = _ParsedOverride()
+    for line in path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        # solution.config.env.KEY = VALUE  (class-based env)
+        m = re.match(r"^solution\.config\.env\.(\w+)\s*=", stripped)
+        if m:
+            val = _rhs_source(stripped)
+            if val and val != "None":
+                result.env[m.group(1)] = val
+            continue
+
+        # solution.config.env["KEY"] = VALUE  (dict-based env)
+        m = re.match(r'^solution\.config\.env\["(\w+)"\]\s*=', stripped)
+        if m:
+            val = _rhs_source(stripped)
+            if val and val != "None":
+                result.env[m.group(1)] = val
+            continue
+
+        # solution.config.ATTR = VALUE  (build_dir, project_dir, default_branch, …)
+        m = re.match(r"^solution\.config\.(\w+)\s*=", stripped)
+        if m:
+            attr = m.group(1)
+            if attr != "env":
+                val = _rhs_source(stripped)
+                if val:
+                    result.config[attr] = val
+            continue
+
+        # p.group.name.path = VALUE  /  p.group.name.branch = VALUE
+        m = re.match(r"^(p(?:\.\w+)+)\.(path|branch)\s*=", stripped)
+        if m:
+            val = _rhs_source(stripped)
+            if val:
+                result.projects.setdefault(m.group(1), {})[m.group(2)] = val
+
+    return result
+
+
+@cli.command("init-override")
+@click.option("--force", "-f", is_flag=True, help="Regenerate and merge existing values.")
+def init_override(force: bool) -> None:
+    """Create solution-override.py with per-developer override template.
+
+    When run with --force on an existing file, values already set in the old file
+    are carried into the new template automatically. The old file is preserved as
+    solution-override-<timestamp>.py.
+    """
+    try:
+        solution_root = find_solution_root()
+    except SolutionNotFoundError as e:
+        console.print(f"[red]Error:[/red] {e}")
         sys.exit(1)
 
-    override_path.write_text(_generate_override_template(solution))
+    override_path = solution_root / OVERRIDE_FILE
+    old: _ParsedOverride | None = None
+
+    if override_path.exists():
+        if not force:
+            console.print(
+                f"[yellow]Warning:[/yellow] {OVERRIDE_FILE} already exists. "
+                "Use --force to regenerate and merge."
+            )
+            sys.exit(1)
+
+        # Parse and backup BEFORE loading the solution so the solution is loaded
+        # from solution.py only — giving us the clean schema (required vs optional).
+        old = _parse_existing_override(override_path)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        backup = override_path.with_name(f"solution-override-{ts}.py")
+        override_path.rename(backup)
+        console.print(f"[dim]Backup:[/dim] {backup.name}")
+
+    # Load without the override so env schema (None = required) is preserved.
+    try:
+        solution = load_solution(solution_root)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+    override_path.write_text(_generate_override_template(solution, old=old))
     console.print(f"[green]Created[/green] {OVERRIDE_FILE}")
 
     # Add to .gitignore
@@ -330,11 +441,22 @@ def init_override(force: bool) -> None:
         console.print("[green]Updated[/green] .gitignore")
 
 
-def _generate_override_template(solution: Solution) -> str:
-    """Generate solution-override.py content from the loaded solution."""
+def _generate_override_template(solution: Solution, old: _ParsedOverride | None = None) -> str:
+    """Generate solution-override.py content from the loaded solution.
+
+    If ``old`` is provided, values previously set in the old override are
+    carried into the new template (env vars, solution settings, project paths).
+    """
+
+    def _cfg(attr: str, default: str) -> str:
+        """Emit a solution.config line: uncommented if old had it set, else commented."""
+        if old and attr in old.config:
+            return f"solution.config.{attr} = {old.config[attr]}"
+        return f"# solution.config.{attr} = {default!r}"
+
     lines = [
         f"# {OVERRIDE_FILE} — per-developer local overrides. DO NOT COMMIT.",
-        "# Run `localbox init-override` to regenerate defaults.",
+        "# Run `localbox init-override --force` to regenerate and merge.",
         "",
         "import solution",
     ]
@@ -352,10 +474,14 @@ def _generate_override_template(solution: Solution) -> str:
     lines += [
         "",
         "# ── Solution settings ─────────────────────────────────────────────────",
-        f'# solution.config.default_branch = "{default_branch}"',
-        f'# solution.config.build_dir = "{build_dir}"',
-        f'# solution.config.project_dir = "{build_dir}/projects"'
-        "  # Override to point all projects to a shared directory",
+        _cfg("default_branch", default_branch),
+        _cfg("build_dir", build_dir),
+        _cfg("project_dir", f"{build_dir}/projects")
+        + (
+            ""
+            if (old and "project_dir" in old.config)
+            else "  # Override to point all projects to a shared directory"
+        ),
     ]
 
     # Env vars — required (val is None) first, optional (val set) second
@@ -370,10 +496,20 @@ def _generate_override_template(solution: Solution) -> str:
                 "# ── Required environment variables ─────────────────────────────────────",
             ]
             for key in sorted(required):
-                if is_class_env:
-                    lines.append(f"solution.config.env.{key} = None  # REQUIRED — set a value")
+                merged = old.env.get(key) if old else None
+                if merged is not None:
+                    # Value was set in old override — restore it
+                    if is_class_env:
+                        lines.append(f"solution.config.env.{key} = {merged}")
+                    else:
+                        lines.append(f'solution.config.env["{key}"] = {merged}')
                 else:
-                    lines.append(f'solution.config.env["{key}"] = None  # REQUIRED — set a value')
+                    if is_class_env:
+                        lines.append(f"solution.config.env.{key} = None  # REQUIRED — set a value")
+                    else:
+                        lines.append(
+                            f'solution.config.env["{key}"] = None  # REQUIRED — set a value'
+                        )
 
         if optional:
             lines += [
@@ -383,10 +519,18 @@ def _generate_override_template(solution: Solution) -> str:
             for key in sorted(optional):
                 val = optional[key]
                 quoted = f'"{val}"' if isinstance(val, str) else repr(val)
-                if is_class_env:
-                    lines.append(f"# solution.config.env.{key} = {quoted}")
+                old_val = old.env.get(key) if old else None
+                if old_val is not None:
+                    # Was explicitly set in old override — restore uncommented
+                    if is_class_env:
+                        lines.append(f"solution.config.env.{key} = {old_val}")
+                    else:
+                        lines.append(f'solution.config.env["{key}"] = {old_val}')
                 else:
-                    lines.append(f'# solution.config.env["{key}"] = {quoted}')
+                    if is_class_env:
+                        lines.append(f"# solution.config.env.{key} = {quoted}")
+                    else:
+                        lines.append(f'# solution.config.env["{key}"] = {quoted}')
 
     # Project path overrides
     if solution.projects:
@@ -396,9 +540,13 @@ def _generate_override_template(solution: Solution) -> str:
             "# Override if a project is in a non-standard location:",
         ]
         for proj_name in sorted(solution.projects):
-            proj = solution.projects[proj_name]
             attr = proj_name.replace(":", ".").replace("-", "_")
-            lines.append(f'# p.{attr}.path = "/absolute/or/relative/path"')
+            ref = f"p.{attr}"
+            old_path = old.projects.get(ref, {}).get("path") if old else None
+            if old_path is not None:
+                lines.append(f"{ref}.path = {old_path}")
+            else:
+                lines.append(f'# {ref}.path = "/absolute/or/relative/path"')
 
         lines += [
             "",
@@ -407,8 +555,15 @@ def _generate_override_template(solution: Solution) -> str:
         for proj_name in sorted(solution.projects):
             proj = solution.projects[proj_name]
             attr = proj_name.replace(":", ".").replace("-", "_")
-            branch = proj.git.branch if proj.git and proj.git.branch else solution.default_branch
-            lines.append(f'# p.{attr}.branch = "{branch}"')
+            ref = f"p.{attr}"
+            old_branch = old.projects.get(ref, {}).get("branch") if old else None
+            if old_branch is not None:
+                lines.append(f"{ref}.branch = {old_branch}")
+            else:
+                branch = (
+                    proj.git.branch if proj.git and proj.git.branch else solution.default_branch
+                )
+                lines.append(f'# {ref}.branch = "{branch}"')
 
     lines.append("")
     return "\n".join(lines)

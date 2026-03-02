@@ -163,6 +163,85 @@ class TestInitOverride:
             result = runner.invoke(cli, ["init-override", "-f"])
             assert result.exit_code == 0
 
+    def test_force_creates_backup(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup(runner)
+            runner.invoke(cli, ["init-override"])
+            runner.invoke(cli, ["init-override", "--force"])
+            backups = list(Path(".").glob("solution-override-*.py"))
+            assert len(backups) == 1
+
+    def test_force_merges_required_env_value(self):
+        """Required env var set in old override should be carried into new template."""
+        runner = _runner()
+        with runner.isolated_filesystem():
+            Path(CONFIG_FILE).write_text(
+                "from localbox.models import SolutionConfig\n"
+                "config = SolutionConfig(env={'DB_PASS': None, 'DB_HOST': 'localhost'})\n"
+            )
+            runner.invoke(cli, ["init-override"])
+            # Simulate developer setting the required value
+            Path("solution-override.py").write_text(
+                "import solution\n"
+                'solution.config.env["DB_PASS"] = "secret"\n'
+                '# solution.config.env["DB_HOST"] = "localhost"\n'
+            )
+            runner.invoke(cli, ["init-override", "--force"])
+            content = Path("solution-override.py").read_text()
+            # Required value restored
+            assert 'solution.config.env["DB_PASS"] = "secret"' in content
+            # Optional remains commented
+            assert '# solution.config.env["DB_HOST"]' in content
+
+    def test_force_merges_project_path(self):
+        """Project path set in old override should be carried into new template."""
+        runner = _runner()
+        with runner.isolated_filesystem():
+            Path(CONFIG_FILE).write_text(
+                "from localbox.models import SolutionConfig, Project\n"
+                "config = SolutionConfig()\n"
+                'myproject = Project("myproject", repo="git@github.com:org/repo.git")\n'
+            )
+            runner.invoke(cli, ["init-override"])
+            Path("solution-override.py").write_text(
+                "import solution\nimport projects as p\n"
+                'p.myproject.path = "/home/dev/repos/myproject"\n'
+            )
+            runner.invoke(cli, ["init-override", "--force"])
+            content = Path("solution-override.py").read_text()
+            assert 'p.myproject.path = "/home/dev/repos/myproject"' in content
+
+    def test_force_merges_config_setting(self):
+        """solution.config settings set in old override should be carried into new template."""
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup(runner)
+            runner.invoke(cli, ["init-override"])
+            Path("solution-override.py").write_text(
+                'import solution\nsolution.config.build_dir = ".my-build"\n'
+            )
+            runner.invoke(cli, ["init-override", "--force"])
+            content = Path("solution-override.py").read_text()
+            assert 'solution.config.build_dir = ".my-build"' in content
+
+    def test_hash_in_password_preserved(self):
+        """Passwords containing '#' must not be truncated during merge."""
+        runner = _runner()
+        with runner.isolated_filesystem():
+            Path(CONFIG_FILE).write_text(
+                "from localbox.models import SolutionConfig\n"
+                "config = SolutionConfig(env={'DB_PASS': None})\n"
+            )
+            runner.invoke(cli, ["init-override"])
+            Path("solution-override.py").write_text(
+                "import solution\n"
+                'solution.config.env["DB_PASS"] = "5$6!#Q_0yw$^"  # REQUIRED — set a value\n'
+            )
+            runner.invoke(cli, ["init-override", "--force"])
+            content = Path("solution-override.py").read_text()
+            assert 'solution.config.env["DB_PASS"] = "5$6!#Q_0yw$^"' in content
+
 
 # ---------------------------------------------------------------------------
 # Error: outside a solution directory
