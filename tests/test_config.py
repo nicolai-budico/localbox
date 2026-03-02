@@ -269,8 +269,7 @@ from localbox.models import SolutionConfig
 config = SolutionConfig()
 """)
         (tmp_path / "solution-override.py").write_text(
-            f"import solution\n"
-            f'solution.config.project_dir = "{abs_repos}"\n'
+            f'import solution\nsolution.config.project_dir = "{abs_repos}"\n'
         )
         solution = load_solution(tmp_path)
 

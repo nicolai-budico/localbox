@@ -312,8 +312,7 @@ def init_override(force: bool) -> None:
     override_path = solution.root / OVERRIDE_FILE
     if override_path.exists() and not force:
         console.print(
-            f"[yellow]Warning:[/yellow] {OVERRIDE_FILE} already exists. "
-            "Use --force to overwrite."
+            f"[yellow]Warning:[/yellow] {OVERRIDE_FILE} already exists. Use --force to overwrite."
         )
         sys.exit(1)
 
@@ -374,9 +373,7 @@ def _generate_override_template(solution: Solution) -> str:
                 if is_class_env:
                     lines.append(f"solution.config.env.{key} = None  # REQUIRED — set a value")
                 else:
-                    lines.append(
-                        f'solution.config.env["{key}"] = None  # REQUIRED — set a value'
-                    )
+                    lines.append(f'solution.config.env["{key}"] = None  # REQUIRED — set a value')
 
         if optional:
             lines += [

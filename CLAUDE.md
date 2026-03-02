@@ -148,8 +148,14 @@ pytest tests/ -v
 ```
 
 ### After Making Changes
-- Run `pytest` to verify all 60 tests pass
-- Test with viveka solution: `cd solutions/viveka && localbox list projects`
+Run all checks before committing or tagging a release — in this order:
+```bash
+ruff format src/ tests/       # auto-format (must run before check)
+ruff check src/ tests/        # lint
+mypy src/localbox/            # type-check
+pytest tests/ -q              # tests (156 items, 3 skipped)
+```
+All four must pass cleanly. CI will fail the release if any do not.
 
 ### Key Files
 - `src/localbox/cli.py` - CLI commands (Click)
