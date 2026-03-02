@@ -147,8 +147,11 @@ pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
-### After Making Changes
-Run all checks before committing or tagging a release — in this order:
+### Committing
+Only commit when the **current prompt** explicitly asks for it. Permission given in a previous prompt does not carry over.
+
+### Before Committing or Releasing
+Run all checks in this order:
 ```bash
 ruff format src/ tests/       # auto-format (must run before check)
 ruff check src/ tests/        # lint
