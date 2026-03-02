@@ -85,7 +85,7 @@ class SpringBootService(JavaService):
         if not isinstance(project, JavaProject):
             return []
         project_local = project.path_name
-        src_dir = solution.directories.projects / project_local
+        src_dir = project.resolve_source_dir(solution.directories.projects)
         return [(project_local, src_dir)]
 
     def generate_dockerfile(self, solution: Solution) -> str:
@@ -105,7 +105,7 @@ class SpringBootService(JavaService):
         assert isinstance(project, JavaProject)
 
         project_local = project.path_name
-        project_dir = projects_dir / project_local
+        project_dir = project.resolve_source_dir(projects_dir)
         assert isinstance(project.jdk, JDK), "JavaProject.jdk should be JDK after __post_init__"
         runtime_image = project.jdk.runtime_image()
 

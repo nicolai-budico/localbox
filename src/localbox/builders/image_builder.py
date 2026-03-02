@@ -98,7 +98,7 @@ def build_image(
         # For builder, usually 1 project (the one being built)
         if projects:
             project = projects[0]
-            src_dir = solution.directories.projects / project.path_name
+            src_dir = project.resolve_source_dir(solution.directories.projects)
             cmd.extend(["--build-context", f"project={src_dir}"])
 
             name = project.path_name
@@ -108,7 +108,7 @@ def build_image(
     elif image_type == "service":
         # For service, inject all projects by name
         for project in projects:
-            src_dir = solution.directories.projects / project.path_name
+            src_dir = project.resolve_source_dir(solution.directories.projects)
             name = project.path_name
             cmd.extend(["--build-context", f"{name}={src_dir}"])
 

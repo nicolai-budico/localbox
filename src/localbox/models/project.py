@@ -100,6 +100,17 @@ class Project:
             raise ValueError("Project has no name — this is a config loading bug")
         return name
 
+    def resolve_source_dir(self, projects_dir: Path) -> Path:
+        """Resolve the local source directory for this project.
+
+        If ``path`` is set, it is used as-is (absolute) or relative to
+        ``projects_dir``.  Otherwise defaults to ``projects_dir / path_name``.
+        """
+        if self.path is not None:
+            p = Path(self.path)
+            return p if p.is_absolute() else projects_dir / p
+        return projects_dir / self.path_name
+
     def get_patches_dir(self, solution_root: Path) -> Path | None:
         """Return patches dir: ./patches/<local_name>/."""
         patches_dir = solution_root / "patches" / self.path_name

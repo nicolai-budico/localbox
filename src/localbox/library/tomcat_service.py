@@ -62,7 +62,7 @@ class TomcatService(JavaService):
         for artifact in self.webapps.values():
             project = artifact.project
             project_local = project.path_name
-            src_dir = solution.directories.projects / project_local
+            src_dir = project.resolve_source_dir(solution.directories.projects)
             contexts.append((project_local, src_dir))
         return contexts
 
@@ -95,7 +95,7 @@ class TomcatService(JavaService):
 
             # Get project directory
             project_local = project.path_name
-            project_dir = projects_dir / project_local
+            project_dir = project.resolve_source_dir(projects_dir)
 
             if java_artifact.path:
                 # Explicit artifact path provided

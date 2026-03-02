@@ -233,6 +233,25 @@ class TestProject:
         result = project.get_patches_dir(tmp_path)
         assert result is None
 
+    def test_resolve_source_dir_default(self, tmp_path):
+        """No path set: returns projects_dir / path_name."""
+        p = Project("libs:utils", repo="git@example.com/utils.git")
+        result = p.resolve_source_dir(tmp_path)
+        assert result == tmp_path / "utils"
+
+    def test_resolve_source_dir_relative(self, tmp_path):
+        """Relative path: resolved relative to projects_dir."""
+        p = Project("libs:utils", repo="git@example.com/utils.git", path="custom/utils")
+        result = p.resolve_source_dir(tmp_path)
+        assert result == tmp_path / "custom/utils"
+
+    def test_resolve_source_dir_absolute(self, tmp_path):
+        """Absolute path: returned as-is, ignoring projects_dir."""
+        abs_path = str(tmp_path / "my-checkout" / "utils")
+        p = Project("libs:utils", repo="git@example.com/utils.git", path=abs_path)
+        result = p.resolve_source_dir(tmp_path / "projects")
+        assert result == tmp_path / "my-checkout" / "utils"
+
 
 class TestComposeConfigPorts:
     """Tests for ComposeConfig ports field."""

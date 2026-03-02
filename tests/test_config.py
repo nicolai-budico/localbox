@@ -199,8 +199,8 @@ class TestDirectories:
         assert solution.directories.projects == temp_solution / ".build/projects"
         assert solution.directories.compose == temp_solution / ".build/compose"
 
-    def test_custom_build_dir(self, tmp_path):
-        """Should use custom build directory from SolutionConfig."""
+    def test_custom_build_dir_relative(self, tmp_path):
+        """build_dir relative to solution root."""
         (tmp_path / CONFIG_FILE).write_text("""\
 from localbox.models import SolutionConfig
 config = SolutionConfig(build_dir="output")
@@ -210,6 +210,72 @@ config = SolutionConfig(build_dir="output")
         assert solution.directories.build == tmp_path / "output"
         assert solution.directories.projects == tmp_path / "output/projects"
         assert solution.directories.compose == tmp_path / "output/compose"
+
+    def test_custom_build_dir_absolute(self, tmp_path):
+        """build_dir given as absolute path."""
+        abs_build = str(tmp_path / "abs-build")
+        (tmp_path / CONFIG_FILE).write_text(f"""\
+from localbox.models import SolutionConfig
+config = SolutionConfig(build_dir="{abs_build}")
+""")
+        solution = load_solution(tmp_path)
+
+        assert solution.directories.build == tmp_path / "abs-build"
+        assert solution.directories.projects == tmp_path / "abs-build/projects"
+
+    def test_custom_project_dir_relative(self, tmp_path):
+        """project_dir relative to build_dir."""
+        (tmp_path / CONFIG_FILE).write_text("""\
+from localbox.models import SolutionConfig
+config = SolutionConfig(build_dir=".build", project_dir="repos")
+""")
+        solution = load_solution(tmp_path)
+
+        assert solution.directories.build == tmp_path / ".build"
+        assert solution.directories.projects == tmp_path / ".build/repos"
+        assert solution.directories.compose == tmp_path / ".build/compose"
+
+    def test_custom_project_dir_absolute(self, tmp_path):
+        """project_dir given as absolute path."""
+        abs_repos = str(tmp_path / "my-repos")
+        (tmp_path / CONFIG_FILE).write_text(f"""\
+from localbox.models import SolutionConfig
+config = SolutionConfig(project_dir="{abs_repos}")
+""")
+        solution = load_solution(tmp_path)
+
+        assert solution.directories.projects == tmp_path / "my-repos"
+        # build and compose are unaffected
+        assert solution.directories.build == tmp_path / ".build"
+        assert solution.directories.compose == tmp_path / ".build/compose"
+
+    def test_project_dir_independent_of_build_dir(self, tmp_path):
+        """Changing build_dir must not affect an absolute project_dir."""
+        abs_repos = str(tmp_path / "shared-repos")
+        (tmp_path / CONFIG_FILE).write_text(f"""\
+from localbox.models import SolutionConfig
+config = SolutionConfig(build_dir="custom-build", project_dir="{abs_repos}")
+""")
+        solution = load_solution(tmp_path)
+
+        assert solution.directories.build == tmp_path / "custom-build"
+        assert solution.directories.projects == tmp_path / "shared-repos"
+
+    def test_override_sets_project_dir(self, tmp_path):
+        """solution-override.py can set project_dir."""
+        abs_repos = str(tmp_path / "dev-repos")
+        (tmp_path / CONFIG_FILE).write_text("""\
+from localbox.models import SolutionConfig
+config = SolutionConfig()
+""")
+        (tmp_path / "solution-override.py").write_text(
+            f"import solution\n"
+            f'solution.config.project_dir = "{abs_repos}"\n'
+        )
+        solution = load_solution(tmp_path)
+
+        assert solution.directories.projects == tmp_path / "dev-repos"
+        assert solution.directories.build == tmp_path / ".build"
 
 
 class TestEnvToDict:

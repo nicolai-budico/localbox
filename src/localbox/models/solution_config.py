@@ -26,6 +26,7 @@ class SolutionConfig(Generic[EnvT]):
     name: str | None = None
     default_branch: str = "dev"
     build_dir: str = ".build"
+    project_dir: str | None = None  # None → "{build_dir}/projects"
     compose_project: str | None = None  # Defaults to solution name
     network: str | None = None  # Defaults to solution name
     env: EnvT = field(default_factory=dict)  # type: ignore[assignment]

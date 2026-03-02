@@ -73,19 +73,26 @@ class DirectoriesConfig:
 
     @classmethod
     def from_config(cls, config: SolutionConfig, solution_root: Path) -> "DirectoriesConfig":
-        """Create from SolutionConfig, resolving relative paths."""
-        build_dir = config.build_dir
+        """Create from SolutionConfig, resolving relative paths.
 
-        def resolve(rel_path: str) -> Path:
-            path = Path(rel_path)
-            if not path.is_absolute():
-                path = solution_root / path
-            return path
+        - build_dir: absolute, or relative to solution root
+        - project_dir: absolute, or relative to resolved build_dir
+        """
+        build = Path(config.build_dir)
+        if not build.is_absolute():
+            build = solution_root / build
+
+        if config.project_dir is not None:
+            projects = Path(config.project_dir)
+            if not projects.is_absolute():
+                projects = build / projects
+        else:
+            projects = build / "projects"
 
         return cls(
-            build=resolve(build_dir),
-            projects=resolve(f"{build_dir}/projects"),
-            compose=resolve(f"{build_dir}/compose"),
+            build=build,
+            projects=projects,
+            compose=build / "compose",
         )
 
 

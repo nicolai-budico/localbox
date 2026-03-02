@@ -65,7 +65,7 @@ def clone_projects(
 
 def clone_project(solution: Solution, project: Project, verbose: bool = False) -> None:
     """Clone a single project repository."""
-    target_dir = solution.directories.projects / project.path_name
+    target_dir = project.resolve_source_dir(solution.directories.projects)
 
     if target_dir.exists():
         logger.debug("clone skip {}: already exists at {}", project.name, target_dir)
@@ -151,7 +151,7 @@ def fetch_projects(
 
 def fetch_project(solution: Solution, project: Project, verbose: bool = False) -> None:
     """Fetch a single project repository."""
-    target_dir = solution.directories.projects / project.path_name
+    target_dir = project.resolve_source_dir(solution.directories.projects)
 
     if not target_dir.exists():
         logger.debug("fetch skip {}: not cloned", project.name)
@@ -200,7 +200,7 @@ def switch_project(
     verbose: bool = False,
 ) -> None:
     """Switch branch for a single project."""
-    target_dir = solution.directories.projects / project.path_name
+    target_dir = project.resolve_source_dir(solution.directories.projects)
 
     if not target_dir.exists():
         logger.debug("switch skip {}: not cloned", project.name)
@@ -308,7 +308,7 @@ def build_project(
     solution: Solution, project: Project, verbose: bool = False, no_cache: bool = False
 ) -> bool:
     """Build a single project. Returns True on success, False on failure."""
-    source_dir = solution.directories.projects / project.path_name
+    source_dir = project.resolve_source_dir(solution.directories.projects)
 
     if not source_dir.exists():
         logger.debug("build skip {}: not cloned", project.name)
@@ -356,7 +356,7 @@ def show_project_status(
         if not isinstance(project, Project):
             continue
 
-        project_dir = solution.directories.projects / project.path_name
+        project_dir = project.resolve_source_dir(solution.directories.projects)
         cloned = project_dir.exists()
 
         # Branch

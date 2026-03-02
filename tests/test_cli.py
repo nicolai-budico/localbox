@@ -105,6 +105,66 @@ class TestInit:
 
 
 # ---------------------------------------------------------------------------
+# init-override command
+# ---------------------------------------------------------------------------
+
+
+class TestInitOverride:
+    """Tests for the init-override command."""
+
+    def _setup(self, runner: CliRunner) -> None:
+        """Create a minimal solution.py so init-override can load a solution."""
+        Path(CONFIG_FILE).write_text(
+            "from localbox.models import SolutionConfig\nconfig = SolutionConfig()\n"
+        )
+
+    def test_creates_override_file(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup(runner)
+            result = runner.invoke(cli, ["init-override"])
+            assert result.exit_code == 0
+            assert Path("solution-override.py").exists()
+
+    def test_contains_project_dir_hint(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup(runner)
+            runner.invoke(cli, ["init-override"])
+            content = Path("solution-override.py").read_text()
+            assert "project_dir" in content
+
+    def test_refuses_to_overwrite_without_force(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup(runner)
+            runner.invoke(cli, ["init-override"])
+            result = runner.invoke(cli, ["init-override"])
+            assert result.exit_code != 0
+            assert "already exists" in result.output
+            assert "--force" in result.output
+
+    def test_force_overwrites(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup(runner)
+            runner.invoke(cli, ["init-override"])
+            Path("solution-override.py").write_text("# old content\n")
+            result = runner.invoke(cli, ["init-override", "--force"])
+            assert result.exit_code == 0
+            content = Path("solution-override.py").read_text()
+            assert "# old content" not in content
+
+    def test_force_short_flag(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup(runner)
+            runner.invoke(cli, ["init-override"])
+            result = runner.invoke(cli, ["init-override", "-f"])
+            assert result.exit_code == 0
+
+
+# ---------------------------------------------------------------------------
 # Error: outside a solution directory
 # ---------------------------------------------------------------------------
 

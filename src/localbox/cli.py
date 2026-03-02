@@ -277,7 +277,7 @@ def clean(targets: tuple[str, ...], clean_build: bool, clean_compose: bool) -> N
         for project in projects:
             if not isinstance(project, Project):
                 continue
-            source_dir = solution.directories.projects / project.path_name
+            source_dir = project.resolve_source_dir(solution.directories.projects)
             if source_dir.exists():
                 shutil.rmtree(source_dir)
                 console.print(f"[green]Removed[/green] {source_dir.relative_to(solution.root)}")
@@ -304,15 +304,16 @@ def clean(targets: tuple[str, ...], clean_build: bool, clean_compose: bool) -> N
 
 
 @cli.command("init-override")
-def init_override() -> None:
+@click.option("--force", "-f", is_flag=True, help="Overwrite existing solution-override.py.")
+def init_override(force: bool) -> None:
     """Create solution-override.py with per-developer override template."""
     solution = load_solution_or_exit()
 
     override_path = solution.root / OVERRIDE_FILE
-    if override_path.exists():
+    if override_path.exists() and not force:
         console.print(
             f"[yellow]Warning:[/yellow] {OVERRIDE_FILE} already exists. "
-            "Delete it first if you want to regenerate."
+            "Use --force to overwrite."
         )
         sys.exit(1)
 
@@ -347,31 +348,48 @@ def _generate_override_template(solution: Solution) -> str:
     is_class_env = not isinstance(raw_env, dict)
 
     # Solution settings
+    build_dir = solution.config.build_dir if solution.config else ".build"
+    default_branch = solution.config.default_branch if solution.config else "dev"
     lines += [
         "",
         "# ── Solution settings ─────────────────────────────────────────────────",
-        f"# solution.config.build_dir = "
-        f'"{solution.config.build_dir if solution.config else ".build"}"',
+        f'# solution.config.default_branch = "{default_branch}"',
+        f'# solution.config.build_dir = "{build_dir}"',
+        f'# solution.config.project_dir = "{build_dir}/projects"'
+        "  # Override to point all projects to a shared directory",
     ]
 
-    # Env vars
+    # Env vars — required (val is None) first, optional (val set) second
     env_dict = _env_to_dict(raw_env)
     if env_dict:
-        lines += [
-            "",
-            "# ── Environment variables ──────────────────────────────────────────────",
-        ]
-        for key, val in sorted(env_dict.items()):
-            if is_class_env:
-                expr = f"solution.config.env.{key} = "
-            else:
-                expr = f'solution.config.env["{key}"] = '
+        required = {k: v for k, v in env_dict.items() if v is None}
+        optional = {k: v for k, v in env_dict.items() if v is not None}
 
-            if val is None:
-                lines.append(f"{expr}None  # REQUIRED — set a value")
-            else:
+        if required:
+            lines += [
+                "",
+                "# ── Required environment variables ─────────────────────────────────────",
+            ]
+            for key in sorted(required):
+                if is_class_env:
+                    lines.append(f"solution.config.env.{key} = None  # REQUIRED — set a value")
+                else:
+                    lines.append(
+                        f'solution.config.env["{key}"] = None  # REQUIRED — set a value'
+                    )
+
+        if optional:
+            lines += [
+                "",
+                "# ── Optional environment variables ─────────────────────────────────────",
+            ]
+            for key in sorted(optional):
+                val = optional[key]
                 quoted = f'"{val}"' if isinstance(val, str) else repr(val)
-                lines.append(f"# {expr}{quoted}")
+                if is_class_env:
+                    lines.append(f"# solution.config.env.{key} = {quoted}")
+                else:
+                    lines.append(f'# solution.config.env["{key}"] = {quoted}')
 
     # Project path overrides
     if solution.projects:
