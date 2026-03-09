@@ -38,11 +38,13 @@ docker compose up -d      # start everything
 
 ## Installation
 
+Install the latest `v0.1` release (floating tag — always the newest patch on the v0.1 line):
+
 ```bash
-pip install "git+https://github.com/nicolai-budico/localbox.git"
+pip install "git+https://github.com/nicolai-budico/localbox.git@v0.1"
 ```
 
-Or install a pinned version:
+Or pin to a specific release:
 
 ```bash
 pip install "git+https://github.com/nicolai-budico/localbox.git@v0.1.0"
@@ -51,6 +53,14 @@ pip install "git+https://github.com/nicolai-budico/localbox.git@v0.1.0"
 **Requirements:** Python 3.10+, Docker Engine 20.10+, Docker Compose V2, Git 2.0+
 
 Run `localbox doctor` to verify all requirements after installation.
+
+### Updating
+
+```bash
+pip install --upgrade "git+https://github.com/nicolai-budico/localbox.git@v0.1"
+```
+
+Each patch release bumps the version number, so `--upgrade` is sufficient.
 
 ---
 
