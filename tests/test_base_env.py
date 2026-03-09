@@ -98,7 +98,7 @@ class TestComposeEnvResolution:
         )
 
     def test_envfield_reference_resolved(self):
-        """Env.FIELD reference in compose environment should resolve to actual value."""
+        """Env.FIELD reference in compose environment should produce ${VAR} reference."""
         from localbox.builders.compose import generate_service_definition
         from localbox.models import ComposeConfig, DockerImage, Service
 
@@ -118,8 +118,10 @@ class TestComposeEnvResolution:
         )
         service._finalize_image_name()
 
-        svc_def = generate_service_definition(solution, service)
-        assert svc_def["environment"]["POSTGRES_DB"] == "mydb"
+        collector: dict[str, str] = {}
+        svc_def = generate_service_definition(solution, service, env_collector=collector)
+        assert svc_def["environment"]["POSTGRES_DB"] == "${db_name}"
+        assert collector["db_name"] == "mydb"
 
     def test_unset_required_field_raises(self):
         """A required EnvField that was not set should raise ValueError."""
@@ -171,7 +173,7 @@ class TestComposeEnvResolution:
             generate_service_definition(solution, service)
 
     def test_plain_string_env_passthrough(self):
-        """Regular string values in compose environment should pass through unchanged."""
+        """Regular string values in compose environment pass through as literals, not in .env."""
         from localbox.builders.compose import generate_service_definition
         from localbox.models import ComposeConfig, DockerImage, Service
 
@@ -186,5 +188,149 @@ class TestComposeEnvResolution:
         )
         service._finalize_image_name()
 
-        svc_def = generate_service_definition(solution, service)
+        collector: dict[str, str] = {}
+        svc_def = generate_service_definition(solution, service, env_collector=collector)
         assert svc_def["environment"]["REDIS_MAXMEMORY"] == "256mb"
+        assert collector == {}
+
+    def _make_solution_at(self, tmp_path, env_instance=None):
+        """Create a minimal Solution rooted at tmp_path."""
+        from localbox.config import DirectoriesConfig, DockerSettings, Solution
+        from localbox.models.solution_config import SolutionConfig
+
+        build = tmp_path / ".build"
+        config = SolutionConfig(env=env_instance or {})
+        return Solution(
+            root=tmp_path,
+            name="test",
+            directories=DirectoriesConfig(
+                build=build,
+                projects=build / "projects",
+                compose=build / "compose",
+            ),
+            docker=DockerSettings(compose_project="test", network="test-net"),
+            config=config,
+        )
+
+    def test_env_file_written(self, tmp_path):
+        """generate_compose_file writes .env using SolutionConfig field names as keys."""
+        from localbox.builders.compose import generate_compose_file
+        from localbox.models import ComposeConfig, DockerImage, Service
+
+        @dataclasses.dataclass
+        class Env(BaseEnv):
+            db_name: str = env_field()
+
+        env_inst = Env(db_name="mydb")
+        sol = self._make_solution_at(tmp_path, env_inst)
+
+        service = Service(
+            name="db",
+            image=DockerImage(image="postgres:16"),
+            compose=ComposeConfig(environment={"POSTGRES_DB": Env.db_name}),
+        )
+        service._finalize_image_name()
+        sol.services = {"db": service}
+
+        generate_compose_file(sol)
+
+        env_file = tmp_path / ".env"
+        assert env_file.exists(), ".env file should be written when EnvField vars are present"
+        content = env_file.read_text()
+        assert "db_name='mydb'" in content
+
+    def test_env_file_skipped_when_no_env_vars(self, tmp_path):
+        """generate_compose_file does not write .env when no EnvField-backed vars are present.
+
+        Plain string env values are written as literals in docker-compose.yml and do not
+        produce a .env entry, so a service with only plain strings also skips .env.
+        """
+        from localbox.builders.compose import generate_compose_file
+        from localbox.models import ComposeConfig, DockerImage, Service
+
+        service = Service(
+            name="cache",
+            image=DockerImage(image="redis:7-alpine"),
+            compose=ComposeConfig(environment={"REDIS_MAXMEMORY": "256mb"}),
+        )
+        service._finalize_image_name()
+
+        sol = self._make_solution_at(tmp_path)
+        sol.services = {"cache": service}
+
+        generate_compose_file(sol)
+
+        assert not (tmp_path / ".env").exists(), ".env must not be created for plain strings"
+
+    def test_gitignore_entries_added(self, tmp_path):
+        """generate_compose_file adds docker-compose.yml and .env to .gitignore."""
+        from localbox.builders.compose import generate_compose_file
+        from localbox.models import ComposeConfig, DockerImage, Service
+
+        service = Service(
+            name="proxy",
+            image=DockerImage(image="nginx:alpine"),
+            compose=ComposeConfig(),
+        )
+        service._finalize_image_name()
+
+        sol = self._make_solution_at(tmp_path)
+        sol.services = {"proxy": service}
+
+        generate_compose_file(sol)
+
+        gitignore_content = (tmp_path / ".gitignore").read_text()
+        assert "docker-compose.yml" in gitignore_content
+        assert ".env" in gitignore_content
+
+    def test_gitignore_not_duplicated(self, tmp_path):
+        """Entries already in .gitignore are not duplicated on second run."""
+        from localbox.builders.compose import generate_compose_file
+        from localbox.models import ComposeConfig, DockerImage, Service
+
+        # Pre-populate .gitignore with one of the entries
+        (tmp_path / ".gitignore").write_text("docker-compose.yml\n")
+
+        service = Service(
+            name="proxy",
+            image=DockerImage(image="nginx:alpine"),
+            compose=ComposeConfig(),
+        )
+        service._finalize_image_name()
+
+        sol = self._make_solution_at(tmp_path)
+        sol.services = {"proxy": service}
+
+        generate_compose_file(sol)
+        generate_compose_file(sol)  # second run should not duplicate
+
+        content = (tmp_path / ".gitignore").read_text()
+        assert content.count("docker-compose.yml") == 1
+        assert content.count(".env") == 1
+
+    def test_secret_in_env_file(self, tmp_path):
+        """Secret fields (is_secret=True) are still written to .env (file is gitignored)."""
+        from localbox.builders.compose import generate_compose_file
+        from localbox.models import ComposeConfig, DockerImage, Service
+
+        @dataclasses.dataclass
+        class Env(BaseEnv):
+            db_pass: str = env_field(is_secret=True)
+
+        env_inst = Env(db_pass="s3cr3t!")
+        sol = self._make_solution_at(tmp_path, env_inst)
+
+        service = Service(
+            name="db",
+            image=DockerImage(image="postgres:16"),
+            compose=ComposeConfig(environment={"POSTGRES_PASSWORD": Env.db_pass}),
+        )
+        service._finalize_image_name()
+        sol.services = {"db": service}
+
+        generate_compose_file(sol)
+
+        env_file = tmp_path / ".env"
+        assert env_file.exists()
+        content = env_file.read_text()
+        assert "db_pass='s3cr3t!'" in content
