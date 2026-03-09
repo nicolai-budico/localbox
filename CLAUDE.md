@@ -51,18 +51,18 @@ Solution-level settings:
 
 ### DockerImage (`models/docker_image.py`)
 Universal Docker image config for both builders and services:
-- `DockerImage` - image, dockerfile, context
+- `DockerImage` - image, dockerfile (no context field; context derived from dockerfile's parent dir)
 
 ### Builder (`models/builder.py`)
 Defines how to build a project in Docker:
 - `Builder` - docker_image (DockerImage), command, volumes, environment
-- `maven(version, jdk)` - pre-configured Maven builder
-- `gradle(version, jdk)` - pre-configured Gradle builder
+- `maven(version)` - pre-configured Maven builder (JDK-agnostic; JDK comes from JavaProject)
+- `gradle(version)` - pre-configured Gradle builder (JDK-agnostic)
 - `node(version)` - pre-configured Node.js builder
 
 ### Project (`models/project.py`)
 - `Project` - base with ergonomic `InitVar` params: `repo`, `branch`, `patches`, `deps`
-- `JavaProject` - defaults to `maven()` builder
+- `JavaProject` - no default builder; must always pass `builder=` explicitly
 - `NodeProject` - defaults to `node()` builder, has `output_dir`
 - Dependencies: pass Project objects to `deps=` (auto-resolves names)
 - Auto-derives `group`/`local_name` from name containing `:` (e.g. `"libs:utils"`)
@@ -130,8 +130,7 @@ services:db:main            # Single service
 - Pre-configured builders: `maven()`, `gradle()`, `node()` factory functions
 - Project sources mounted at `/var/src` in the container
 - Cache volumes for Maven (`.build/maven`), Gradle (`.build/gradle`), npm (`.build/node`)
-- Custom Dockerfile builders: `dockerfile` and `context` paths resolve relative to solution root
-- If `context` is omitted, defaults to the Dockerfile's parent directory
+- Custom Dockerfile builders: `dockerfile` path resolves relative to solution root; context is always the Dockerfile's parent directory
 
 ## Working on This Project
 
@@ -150,13 +149,15 @@ pytest tests/ -v
 ### Committing
 Only commit when the **current prompt** explicitly asks for it. Permission given in a previous prompt does not carry over.
 
+Do not include `Co-Authored-By` trailers in commit messages.
+
 ### Before Committing or Releasing
 Run all checks in this order:
 ```bash
 ruff format src/ tests/       # auto-format (must run before check)
 ruff check src/ tests/        # lint
 mypy src/localbox/            # type-check
-pytest tests/ -q              # tests (156 items, 3 skipped)
+pytest tests/ -q              # tests (166 items, 3 skipped)
 ```
 All four must pass cleanly. CI will fail the release if any do not.
 
