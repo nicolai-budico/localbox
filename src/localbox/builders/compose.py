@@ -39,9 +39,18 @@ _NoAliasDumper.add_representer(
 
 
 def _quote_env_value(value: str) -> str:
-    """Single-quote a value for .env file (POSIX-safe: handles $, #, spaces)."""
-    escaped = value.replace("'", "'\\''")
-    return f"'{escaped}'"
+    """Quote a value for .env file using double quotes with all special chars escaped.
+
+    Escapes characters that would cause shell substitution or command execution:
+      \\  ->  \\\\   (must be first to avoid double-escaping)
+      "   ->  \\"
+      $   ->  \\$   (prevents ${var} and $(...) substitution)
+      `   ->  \\`   (prevents backtick command substitution)
+    """
+    escaped = (
+        value.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
+    )
+    return f'"{escaped}"'
 
 
 def _write_env_file(path: Path, env_vars: dict[str, str]) -> None:
@@ -77,6 +86,35 @@ def _ensure_gitignored(solution_root: Path, entries: list[str]) -> None:
         content += "\n"
     content += "\n".join(to_add) + "\n"
     gitignore.write_text(content)
+
+
+def _collect_all_solution_env_vars(solution: Solution) -> dict[str, str]:
+    """Collect all env vars defined in SolutionConfig.env.
+
+    For BaseEnv instances, all fields are collected; unset required fields raise ValueError.
+    For plain dicts, all non-None values are collected.
+    """
+    env = solution.config.env if solution.config else None
+    if not env:
+        return {}
+
+    result: dict[str, str] = {}
+
+    if isinstance(env, BaseEnv):
+        for f in dataclasses.fields(env):
+            value = getattr(env, f.name)
+            if isinstance(value, EnvField):
+                raise ValueError(
+                    f"Env.{f.name} is required but not set. "
+                    f"Set it in solution.py or solution-override.py."
+                )
+            result[f.name] = value
+    elif isinstance(env, dict):
+        for k, v in env.items():
+            if v is not None:
+                result[k] = v
+
+    return result
 
 
 def generate_compose_file(solution: Solution) -> Path:
@@ -127,10 +165,13 @@ def generate_compose_file(solution: Solution) -> Path:
     logger.info("compose file written to {}", compose_file)
     console.print(f"[green]Generated[/green] {compose_file}")
 
-    # Write .env file if any environment variables were collected
-    if env_vars:
+    # Merge solution-level env vars with service-collected env vars
+    solution_env_vars = _collect_all_solution_env_vars(solution)
+    all_env_vars = {**solution_env_vars, **env_vars}
+
+    if all_env_vars:
         env_file = solution.root / ".env"
-        _write_env_file(env_file, env_vars)
+        _write_env_file(env_file, all_env_vars)
         console.print(f"[green]Generated[/green] {env_file}")
 
     # Ensure both files are gitignored

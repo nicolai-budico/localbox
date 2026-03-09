@@ -237,7 +237,7 @@ class TestComposeEnvResolution:
         env_file = tmp_path / ".env"
         assert env_file.exists(), ".env file should be written when EnvField vars are present"
         content = env_file.read_text()
-        assert "db_name='mydb'" in content
+        assert 'db_name="mydb"' in content
 
     def test_env_file_skipped_when_no_env_vars(self, tmp_path):
         """generate_compose_file does not write .env when no EnvField-backed vars are present.
@@ -333,4 +333,69 @@ class TestComposeEnvResolution:
         env_file = tmp_path / ".env"
         assert env_file.exists()
         content = env_file.read_text()
-        assert "db_pass='s3cr3t!'" in content
+        assert 'db_pass="s3cr3t!"' in content
+
+    def test_unreferenced_baseenv_fields_written_to_env_file(self, tmp_path):
+        """All BaseEnv fields are written to .env even when not referenced by any service."""
+        from localbox.builders.compose import generate_compose_file
+        from localbox.models import ComposeConfig, DockerImage, Service
+
+        @dataclasses.dataclass
+        class Env(BaseEnv):
+            db_name: str = env_field()
+            db_pass: str = env_field(is_secret=True)
+
+        env_inst = Env(db_name="mydb", db_pass="secret")
+        sol = self._make_solution_at(tmp_path, env_inst)
+
+        # Service does not reference any env field
+        service = Service(
+            name="db",
+            image=DockerImage(image="postgres:16"),
+            compose=ComposeConfig(),
+        )
+        service._finalize_image_name()
+        sol.services = {"db": service}
+
+        generate_compose_file(sol)
+
+        env_file = tmp_path / ".env"
+        assert env_file.exists(), ".env must be written even when no service references env fields"
+        content = env_file.read_text()
+        assert 'db_name="mydb"' in content
+        assert 'db_pass="secret"' in content
+
+    def test_special_chars_are_escaped(self, tmp_path):
+        """Values with special chars are double-quoted with $, `, \\, and \" escaped."""
+        from localbox.builders.compose import _quote_env_value
+
+        # Value containing single quote, double quote, dollar, backtick, backslash
+        assert _quote_env_value(r"""$some'var\"abc""") == r'''"\$some'var\\\"abc"'''
+        assert _quote_env_value("price $5") == r'"price \$5"'
+        assert _quote_env_value("say `hi`") == r'"say \`hi\`"'
+        assert _quote_env_value('say "hi"') == r'"say \"hi\""'
+        assert _quote_env_value("back\\slash") == r'"back\\slash"'
+        assert _quote_env_value("it's fine") == '"it\'s fine"'
+
+    def test_dict_env_vars_written_to_env_file(self, tmp_path):
+        """All non-None dict env vars in SolutionConfig are written to .env."""
+        from localbox.builders.compose import generate_compose_file
+        from localbox.models import ComposeConfig, DockerImage, Service
+
+        sol = self._make_solution_at(tmp_path, {"DB_HOST": "localhost", "DB_PORT": "5432"})
+
+        service = Service(
+            name="db",
+            image=DockerImage(image="postgres:16"),
+            compose=ComposeConfig(),
+        )
+        service._finalize_image_name()
+        sol.services = {"db": service}
+
+        generate_compose_file(sol)
+
+        env_file = tmp_path / ".env"
+        assert env_file.exists()
+        content = env_file.read_text()
+        assert 'DB_HOST="localhost"' in content
+        assert 'DB_PORT="5432"' in content
