@@ -21,7 +21,7 @@ set -euo pipefail
 
 # ── 1. Verify we are on a release branch ──────────────────────────────────────
 
-BRANCH=$(git rev-parse --abbrev-ref HEAD)
+BRANCH=$(git branch --show-current)
 
 if ! echo "$BRANCH" | grep -qP '^v\d+\.\d+$'; then
   echo "error: must be on a release branch like 'v0.1', current branch is '$BRANCH'" >&2
