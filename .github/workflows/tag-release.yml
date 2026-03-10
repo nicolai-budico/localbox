@@ -28,12 +28,25 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Create and push tag
+        id: tag
         run: |
           TAG="v${{ steps.version.outputs.version }}"
           if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
             echo "Tag $TAG already exists, skipping."
+            echo "created=false" >> "$GITHUB_OUTPUT"
           else
             git tag "$TAG"
             git push origin "$TAG"
             echo "Pushed tag $TAG"
+            echo "created=true" >> "$GITHUB_OUTPUT"
           fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        if: steps.tag.outputs.created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.tag.outputs.tag }}" \
+            --generate-notes \
+            --title "${{ steps.tag.outputs.tag }}"
