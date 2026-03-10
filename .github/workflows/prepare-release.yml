@@ -1,0 +1,68 @@
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  prepare:
+    name: Bump version and open release PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Read current version from v0.1
+        id: current
+        run: |
+          VERSION=$(git show origin/v0.1:pyproject.toml \
+            | python3 -c "
+          import sys, re
+          m = re.search(r'^version\s*=\s*\"([^\"]+)\"', sys.stdin.read(), re.MULTILINE)
+          print(m.group(1))
+          ")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Compute next patch version
+        id: next
+        run: |
+          IFS='.' read -ra PARTS <<< "${{ steps.current.outputs.version }}"
+          PARTS[2]=$(( PARTS[2] + 1 ))
+          NEXT="${PARTS[0]}.${PARTS[1]}.${PARTS[2]}"
+          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Bump version in pyproject.toml
+        run: |
+          NEXT="${{ steps.next.outputs.version }}"
+          sed -i "s/^version = \".*\"/version = \"$NEXT\"/" pyproject.toml
+
+      - name: Push next-release branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b next-release
+          git add pyproject.toml
+          git commit -m "chore: release v${{ steps.next.outputs.version }}"
+          git push origin next-release --force
+
+      - name: Open or update release PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEXT="${{ steps.next.outputs.version }}"
+          TITLE="Release v$NEXT"
+          BODY="Automated release PR — bumps version to \`$NEXT\`. Merge to release."
+
+          EXISTING=$(gh pr list --head next-release --base v0.1 --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            gh pr edit "$EXISTING" --title "$TITLE" --body "$BODY"
+            echo "Updated existing PR #$EXISTING"
+          else
+            gh pr create --head next-release --base v0.1 --title "$TITLE" --body "$BODY"
+          fi
