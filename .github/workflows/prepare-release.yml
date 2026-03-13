@@ -12,19 +12,20 @@ jobs:
       pull-requests: write
 
     steps:
-      - name: Checkout main
+      - name: Checkout v0.1
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: v0.1
           fetch-depth: 0
 
       - name: Read current version from v0.1
         id: current
         run: |
-          VERSION=$(git show origin/v0.1:pyproject.toml \
-            | python3 -c "
-          import sys, re
-          m = re.search(r'^version\s*=\s*\"([^\"]+)\"', sys.stdin.read(), re.MULTILINE)
+          VERSION=$(python3 -c "
+          import re
+          with open('pyproject.toml') as f:
+              content = f.read()
+          m = re.search(r'^version\s*=\s*\"([^\"]+)\"', content, re.MULTILINE)
           print(m.group(1))
           ")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
