@@ -234,8 +234,20 @@ class TestProject:
         assert result is None
 
     def test_resolve_source_dir_default(self, tmp_path):
-        """No path set: returns projects_dir / path_name."""
+        """No path set: returns projects_dir / repo base name."""
         p = Project("libs:utils", repo="git@example.com/utils.git")
+        result = p.resolve_source_dir(tmp_path)
+        assert result == tmp_path / "utils"
+
+    def test_resolve_source_dir_uses_repo_name(self, tmp_path):
+        """Repo base name takes precedence over project path_name."""
+        p = Project("portal", repo="git@bitbucket.org:viveka-health-dev/employer-portal.git")
+        result = p.resolve_source_dir(tmp_path)
+        assert result == tmp_path / "employer-portal"
+
+    def test_resolve_source_dir_no_git(self, tmp_path):
+        """No git config: falls back to path_name."""
+        p = Project("libs:utils")
         result = p.resolve_source_dir(tmp_path)
         assert result == tmp_path / "utils"
 
