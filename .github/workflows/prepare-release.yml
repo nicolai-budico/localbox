@@ -12,19 +12,20 @@ jobs:
       pull-requests: write
 
     steps:
-      - name: Checkout main
+      - name: Checkout v0.1
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: v0.1
           fetch-depth: 0
 
       - name: Read current version from v0.1
         id: current
         run: |
-          VERSION=$(git show origin/v0.1:pyproject.toml \
-            | python3 -c "
-          import sys, re
-          m = re.search(r'^version\s*=\s*\"([^\"]+)\"', sys.stdin.read(), re.MULTILINE)
+          VERSION=$(python3 -c "
+          import re
+          with open('pyproject.toml') as f:
+              content = f.read()
+          m = re.search(r'^version\s*=\s*\"([^\"]+)\"', content, re.MULTILINE)
           print(m.group(1))
           ")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -37,18 +38,16 @@ jobs:
           NEXT="${PARTS[0]}.${PARTS[1]}.${PARTS[2]}"
           echo "version=$NEXT" >> "$GITHUB_OUTPUT"
 
-      - name: Bump version in pyproject.toml
-        run: |
-          NEXT="${{ steps.next.outputs.version }}"
-          sed -i "s/^version = \".*\"/version = \"$NEXT\"/" pyproject.toml
-
-      - name: Push next-release branch
+      - name: Merge main into next-release and bump version
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b next-release
+          git merge --no-edit origin/main
+          NEXT="${{ steps.next.outputs.version }}"
+          sed -i "s/^version = \".*\"/version = \"$NEXT\"/" pyproject.toml
           git add pyproject.toml
-          git commit -m "chore: release v${{ steps.next.outputs.version }}"
+          git commit -m "chore: release v$NEXT"
           git push origin next-release --force
 
       - name: Open or update release PR

@@ -104,11 +104,15 @@ class Project:
         """Resolve the local source directory for this project.
 
         If ``path`` is set, it is used as-is (absolute) or relative to
-        ``projects_dir``.  Otherwise defaults to ``projects_dir / path_name``.
+        ``projects_dir``.  Otherwise uses the repo base name from the git URL
+        (e.g. ``employer-portal`` from ``git@bitbucket.org:org/employer-portal.git``),
+        falling back to ``path_name`` if no git config is present.
         """
         if self.path is not None:
             p = Path(self.path)
             return p if p.is_absolute() else projects_dir / p
+        if self.git is not None:
+            return projects_dir / extract_repo_name(self.git.url)
         return projects_dir / self.path_name
 
     def get_patches_dir(self, solution_root: Path) -> Path | None:
