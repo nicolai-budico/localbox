@@ -1,0 +1,52 @@
+name: Tag Release
+
+on:
+  push:
+    branches:
+      - v0.1
+
+jobs:
+  tag:
+    name: Create and push release tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from pyproject.toml
+        id: version
+        run: |
+          VERSION=$(python3 -c "
+          import re
+          with open('pyproject.toml') as f:
+              content = f.read()
+          m = re.search(r'^version\s*=\s*\"([^\"]+)\"', content, re.MULTILINE)
+          print(m.group(1))
+          ")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        id: tag
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+            echo "Tag $TAG already exists, skipping."
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+            echo "Pushed tag $TAG"
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        if: steps.tag.outputs.created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.tag.outputs.tag }}" \
+            --generate-notes \
+            --title "${{ steps.tag.outputs.tag }}"

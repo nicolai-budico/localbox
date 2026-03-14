@@ -1,0 +1,4 @@
+.build
+.logs
+solution-override.py
+docker-compose.yml
