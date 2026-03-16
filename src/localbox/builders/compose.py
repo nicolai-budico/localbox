@@ -217,6 +217,14 @@ def _format_compose_yaml(yaml_text: str, service_names: KeysView[str]) -> str:
     return text
 
 
+def _relative_if_inside(path: Path, root: Path) -> str:
+    """Return a ./-prefixed relative path if path is inside root, else absolute string."""
+    try:
+        return "./" + str(path.relative_to(root))
+    except ValueError:
+        return str(path)
+
+
 def _render_volume(vol: Volume, solution: Solution) -> str:
     """Render a Volume as a docker-compose volume string."""
     if isinstance(vol, NamedVolume):
@@ -224,12 +232,12 @@ def _render_volume(vol: Volume, solution: Solution) -> str:
     elif isinstance(vol, CacheVolume):
         host = solution.directories.build / vol.name
         host.mkdir(parents=True, exist_ok=True)
-        mount = f"{host}:{vol.container}"
+        mount = f"{_relative_if_inside(host, solution.root)}:{vol.container}"
     elif isinstance(vol, BindVolume):
         host = Path(vol.host)
         if not host.is_absolute():
             host = solution.root / host
-        mount = f"{host}:{vol.container}"
+        mount = f"{_relative_if_inside(host, solution.root)}:{vol.container}"
     else:
         raise ValueError(f"Unknown volume type: {type(vol)}")
     if vol.readonly:
