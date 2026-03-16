@@ -239,58 +239,31 @@ def doctor() -> None:
 
 
 @cli.command()
-@click.argument("targets", nargs=-1, shell_complete=complete_targets)
 @click.option(
     "--build",
     "clean_build",
     is_flag=True,
-    help="Remove entire .build/ directory (all caches and sources)",
+    help="Remove entire .build/ directory (all caches)",
 )
 @click.option(
     "--compose", "clean_compose", is_flag=True, help="Remove generated docker-compose.yml"
 )
-def clean(targets: tuple[str, ...], clean_build: bool, clean_compose: bool) -> None:
-    """Remove build artifacts and cloned sources.
+def clean(clean_build: bool, clean_compose: bool) -> None:
+    """Remove build caches and generated files.
 
     Examples:
-        localbox clean projects            # Remove all cloned project directories
-        localbox clean projects:api        # Remove a single project directory
-        localbox clean --build             # Remove entire .build/ directory
+        localbox clean --build             # Remove entire .build/ directory (caches)
         localbox clean --compose           # Remove docker-compose.yml
         localbox clean --build --compose   # Remove everything generated
     """
     import shutil
 
-    if not targets and not clean_build and not clean_compose:
-        console.print(
-            "[yellow]Nothing to clean. Specify targets or use --build / --compose.[/yellow]"
-        )
+    if not clean_build and not clean_compose:
+        console.print("[yellow]Nothing to clean. Use --build / --compose.[/yellow]")
         console.print("Run [bold]localbox clean --help[/bold] for usage.")
         return
 
     solution = load_solution_or_exit()
-
-    # --- Project source directories ---
-    if targets:
-        try:
-            projects = resolve_targets(solution, targets, "projects")
-        except TargetError as e:
-            console.print(f"[red]Error:[/red] {e}")
-            sys.exit(1)
-
-        for project in projects:
-            if not isinstance(project, Project):
-                continue
-            source_dir = project.resolve_source_dir(solution.directories.projects)
-            if source_dir.exists():
-                shutil.rmtree(source_dir)
-                try:
-                    display_path = source_dir.relative_to(solution.root)
-                except ValueError:
-                    display_path = source_dir
-                console.print(f"[green]Removed[/green] {display_path}")
-            else:
-                console.print(f"[yellow]Skip[/yellow] {project.name} (not cloned)")
 
     # --- Entire .build/ directory ---
     if clean_build:
