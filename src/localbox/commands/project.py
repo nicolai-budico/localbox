@@ -234,11 +234,50 @@ def switch_project(
     console.print(f"[green]Switched[/green] {project.name} to {target_branch}")
 
 
+def _last_log_line(log_path: Path | None) -> str | None:
+    """Return last non-empty line from log file, truncated to 80 chars."""
+    if log_path is None or not log_path.exists():
+        return None
+    lines = log_path.read_text(errors="replace").splitlines()
+    for line in reversed(lines):
+        stripped = line.strip()
+        if stripped:
+            return stripped[:80]
+    return None
+
+
+def _print_build_summary(results: list[tuple[str, str, Path | None]]) -> None:
+    """Print a build summary table."""
+    table = Table(title="Build Summary")
+    table.add_column("Project", style="cyan")
+    table.add_column("Status", justify="center")
+    table.add_column("Info", style="dim")
+
+    for name, status, log_path in results:
+        if status == "built":
+            table.add_row(name, "[green]Built[/green]", "")
+        elif status == "skipped":
+            table.add_row(name, "[yellow]Skipped[/yellow]", "not cloned")
+        else:
+            info = _last_log_line(log_path) or (str(log_path) if log_path else "")
+            table.add_row(name, "[red]Failed[/red]", info)
+
+    console.print(table)
+
+    built = sum(1 for _, s, _ in results if s == "built")
+    failed = sum(1 for _, s, _ in results if s == "failed")
+    if failed:
+        console.print(f"[bold]{built} built, [red]{failed} failed[/red][/bold]")
+    else:
+        console.print(f"[bold green]{built} built successfully[/bold green]")
+
+
 def build_projects(
     solution: Solution,
     projects: list[Union[Project, "Service"]],
     verbose: bool = False,
     no_cache: bool = False,
+    keep_going: bool = False,
 ) -> None:
     """Build projects in dependency order."""
     # Filter to actual projects
@@ -253,9 +292,15 @@ def build_projects(
 
     console.print(f"[bold]Building {len(ordered)} projects in dependency order[/bold]")
 
+    results: list[tuple[str, str, Path | None]] = []
     for project in ordered:
-        if not build_project(solution, project, verbose=verbose, no_cache=no_cache):
-            return
+        status, log_path = build_project(solution, project, verbose=verbose, no_cache=no_cache)
+        results.append((project.name or "", status, log_path))
+        if status == "failed" and not keep_going:
+            break
+
+    if len(ordered) > 1 or (results and results[0][1] == "failed"):
+        _print_build_summary(results)
 
 
 def resolve_build_order(solution: Solution, projects: list[Project]) -> list[Project]:
@@ -306,14 +351,14 @@ def resolve_build_order(solution: Solution, projects: list[Project]) -> list[Pro
 
 def build_project(
     solution: Solution, project: Project, verbose: bool = False, no_cache: bool = False
-) -> bool:
-    """Build a single project. Returns True on success, False on failure."""
+) -> tuple[str, Path | None]:
+    """Build a single project. Returns (status, log_path); status is 'built'/'failed'/'skipped'."""
     source_dir = project.resolve_source_dir(solution.directories.projects)
 
     if not source_dir.exists():
         logger.debug("build skip {}: not cloned", project.name)
         console.print(f"[yellow]Skip[/yellow] {project.name} (not cloned)")
-        return True
+        return "skipped", None
 
     logger.info("build {} (no_cache={})", project.name, no_cache)
     console.print(f"[blue]Building[/blue] {project.name}...")
@@ -333,12 +378,12 @@ def build_project(
         _write_last_build(source_dir)
         logger.info("build {} completed", project.name)
         console.print(f"[green]Built[/green] {project.name}")
+        return "built", log_path
     else:
         logger.error("build {} failed", project.name)
         console.print(f"[red]Failed[/red] to build {project.name}")
         console.print(f"[dim]  Log: {log_path}[/dim]")
-
-    return success
+        return "failed", log_path
 
 
 def show_project_status(

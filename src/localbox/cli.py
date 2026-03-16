@@ -757,8 +757,14 @@ def switch_branch(ctx: LocalboxContext, targets: tuple[str, ...], branch: str | 
 @cli.command()
 @click.argument("targets", nargs=-1, required=True, shell_complete=complete_targets)
 @click.option("--no-cache", is_flag=True, help="Build without Docker layer cache")
+@click.option(
+    "--keep-going",
+    "-k",
+    is_flag=True,
+    help="Continue building remaining projects after a failure (default: stop on first error)",
+)
 @pass_context
-def build(ctx: LocalboxContext, targets: tuple[str, ...], no_cache: bool) -> None:
+def build(ctx: LocalboxContext, targets: tuple[str, ...], no_cache: bool, keep_going: bool) -> None:
     """Build projects or service images.
 
     Examples:
@@ -783,7 +789,9 @@ def build(ctx: LocalboxContext, targets: tuple[str, ...], no_cache: bool) -> Non
 
         from localbox.commands.project import build_projects
 
-        build_projects(solution, projects, verbose=ctx.verbose, no_cache=no_cache)
+        build_projects(
+            solution, projects, verbose=ctx.verbose, no_cache=no_cache, keep_going=keep_going
+        )
 
     elif first_target.startswith("services"):
         try:
