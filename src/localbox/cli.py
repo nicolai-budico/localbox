@@ -284,7 +284,11 @@ def clean(targets: tuple[str, ...], clean_build: bool, clean_compose: bool) -> N
             source_dir = project.resolve_source_dir(solution.directories.projects)
             if source_dir.exists():
                 shutil.rmtree(source_dir)
-                console.print(f"[green]Removed[/green] {source_dir.relative_to(solution.root)}")
+                try:
+                    display_path = source_dir.relative_to(solution.root)
+                except ValueError:
+                    display_path = source_dir
+                console.print(f"[green]Removed[/green] {display_path}")
             else:
                 console.print(f"[yellow]Skip[/yellow] {project.name} (not cloned)")
 
