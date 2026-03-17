@@ -117,6 +117,7 @@ class TestBuilder:
         assert b.docker_image.name == "node-20"
         assert b.build_command == "npm ci && npm run build"
         assert b.build_command_list is None
+        assert b.entrypoint == ""  # Bypasses docker-entrypoint.sh
         assert b.environment.get("npm_config_cache") == "/home/node/.npm"
         assert len(b.volumes) == 1
         assert isinstance(b.volumes[0], CacheVolume)
@@ -235,9 +236,10 @@ class TestBuilder:
         assert "gradle" in b.clean_command_list
 
     def test_node_clean_command(self):
-        """node() should have clean_command set to 'rm -rf node_modules'."""
+        """node() uses clean_command_list so rm runs directly without a shell."""
         b = node()
-        assert b.clean_command == "rm -rf node_modules"
+        assert b.clean_command is None
+        assert b.clean_command_list == ["rm", "-rf", "node_modules"]
 
     def test_maven_wrapper_builder(self):
         """MavenWrapperBuilder should run ./mvnw on a plain JDK image."""

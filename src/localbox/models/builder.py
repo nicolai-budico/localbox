@@ -513,7 +513,8 @@ def node(version: int = 20) -> Builder:
     return Builder(
         docker_image=DockerImage(name=f"node-{version}", image=f"node:{version}"),
         build_command="npm ci && npm run build",
-        clean_command="rm -rf node_modules",
+        clean_command_list=["rm", "-rf", "node_modules"],
+        entrypoint="",  # Bypass docker-entrypoint.sh; run commands directly
         volumes=[
             CacheVolume(name="node", container="/home/node/.npm"),
         ],
