@@ -163,7 +163,7 @@ ui = NodeProject(
     repo="git@github.com:org/ui.git",
     builder=Builder(
         docker_image=DockerImage(name="node-20", image="node:20"),
-        command="yarn install --frozen-lockfile && yarn build",
+        build_command="yarn install --frozen-lockfile && yarn build",
         volumes=[CacheVolume(name="yarn", container="/home/node/.yarn")],
         environment={"YARN_CACHE_FOLDER": "/home/node/.yarn"},
     ),
@@ -225,7 +225,7 @@ ui = NodeProject(
     repo="git@github.com:org/ui.git",
     builder=Builder(
         docker_image=DockerImage(name="node-20", image="node:20"),
-        command="npm ci && npm run build",
+        build_command="npm ci && npm run build",
         volumes=[CacheVolume(name="node", container="/home/node/.npm")],
         environment={
             "npm_config_cache": "/home/node/.npm",

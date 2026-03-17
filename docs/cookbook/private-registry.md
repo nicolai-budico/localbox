@@ -49,7 +49,7 @@ internal_builder = Builder(
         name="internal-maven",
         image="registry.company.com/tools/maven:3.9-jdk17",
     ),
-    command="mvn install -Dmaven.test.skip=true",
+    build_command="mvn install -Dmaven.test.skip=true",
     volumes=[cache_volume("maven", "/var/maven/.m2")],
 )
 ```
@@ -163,7 +163,7 @@ from localbox.models import Builder, DockerImage, cache_volume
 
 ui_builder = Builder(
     docker_image=DockerImage(name="node-20", image="node:20"),
-    command="npm ci && npm run build",
+    build_command="npm ci && npm run build",
     volumes=[cache_volume("node", "/home/node/.npm")],
     environment={
         "npm_config_cache": "/home/node/.npm",
@@ -186,7 +186,7 @@ from localbox.models import Builder, DockerImage, cache_volume, bind_volume
 
 ui_builder = Builder(
     docker_image=DockerImage(name="node-20", image="node:20"),
-    command="npm ci && npm run build",
+    build_command="npm ci && npm run build",
     volumes=[
         cache_volume("node", "/home/node/.npm"),
         bind_volume("assets/npm/.npmrc", "/home/node/.npmrc", readonly=True),

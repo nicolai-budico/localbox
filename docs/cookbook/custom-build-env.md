@@ -49,7 +49,7 @@ api = JavaProject(
             name="custom-maven",
             dockerfile="assets/dockerfiles/builder/Dockerfile",
         ),
-        command="mvn -Duser.home=/var/maven install -Dmaven.test.skip=true",
+        build_command="mvn -Duser.home=/var/maven install -Dmaven.test.skip=true",
         volumes=[
             cache_volume("maven", "/var/maven/.m2"),
         ],
@@ -127,7 +127,7 @@ from localbox.models import Builder, DockerImage, cache_volume
 
 builder = Builder(
     docker_image=DockerImage(name="jdk17", image="amazoncorretto:17"),
-    script="assets/scripts/build-api.sh",     # relative to solution root
+    build_script="assets/scripts/build-api.sh",     # relative to solution root
     volumes=[
         cache_volume("maven", "/root/.m2"),
     ],
@@ -168,7 +168,7 @@ ui = NodeProject(
     repo="git@github.com:org/ui.git",
     builder=Builder(
         docker_image=DockerImage(name="node-20", image="node:20"),
-        command="npm ci && npm run build",
+        build_command="npm ci && npm run build",
         volumes=[
             cache_volume("node", "/home/node/.npm"),
         ],
@@ -185,7 +185,7 @@ Or with yarn:
 ```python
 builder=Builder(
     docker_image=DockerImage(name="node-20", image="node:20"),
-    command="yarn install --frozen-lockfile && yarn build",
+    build_command="yarn install --frozen-lockfile && yarn build",
     volumes=[
         cache_volume("yarn", "/home/node/.yarn"),
     ],
@@ -204,7 +204,7 @@ from localbox.models import Builder, DockerImage, cache_volume
 
 builder = Builder(
     docker_image=DockerImage(name="maven39-jdk17", image="maven:3.9-amazoncorretto-17"),
-    command="mvn install -Dmaven.test.skip=true",
+    build_command="mvn install -Dmaven.test.skip=true",
     volumes=[cache_volume("maven", "/var/maven/.m2")],
     timeout=45,    # kill after 45 minutes; exit code 124
 )
@@ -221,7 +221,7 @@ Some images use a non-standard entrypoint. Override it to run a shell command:
 ```python
 builder = Builder(
     docker_image=DockerImage(name="sbt", image="sbtscala/scala-sbt:eclipse-temurin-17.0.5_8_1.8.2_2.13.10"),
-    command="sbt clean assembly",
+    build_command="sbt clean assembly",
     entrypoint="",    # override the image's entrypoint so "sh -c <command>" works
     volumes=[
         cache_volume("ivy2", "/root/.ivy2"),
@@ -239,13 +239,16 @@ Setting `entrypoint=""` clears the image's default ENTRYPOINT, letting Localbox 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `docker_image` | `DockerImage` | `None` | Image or Dockerfile to use |
-| `command` | `str` | `None` | Shell command (passed to `sh -c`) |
-| `command_list` | `list[str]` | `None` | Explicit argv (bypasses shell) |
-| `script` | `str` | `None` | Path to script (relative to solution root) |
+| `build_command` | `str` | `None` | Shell command for build (passed to `sh -c`) |
+| `build_command_list` | `list[str]` | `None` | Explicit argv for build (bypasses shell) |
+| `build_script` | `str` | `None` | Path to build script (relative to solution root) |
+| `clean_command` | `str` | `None` | Shell command for clean step |
+| `clean_command_list` | `list[str]` | `None` | Explicit argv for clean step |
+| `clean_script` | `str` | `None` | Path to clean script (relative to solution root) |
 | `volumes` | `list[Volume]` | `[]` | Volume mounts |
 | `environment` | `dict[str, str]` | `{}` | Environment variables |
 | `entrypoint` | `str` | `None` | Override container entrypoint (`""` to clear) |
 | `workdir` | `str` | `/var/src` | Container working directory (source root) |
 | `timeout` | `int` | `None` | Kill container after N minutes |
 
-Only one of `command`, `command_list`, or `script` is used — checked in that order.
+Only one of `build_command`, `build_command_list`, or `build_script` is used — priority: `build_script` > `build_command` > `build_command_list`.

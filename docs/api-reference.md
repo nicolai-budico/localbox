@@ -10,7 +10,8 @@ from localbox.models import (
     DockerImage,
     Volume, BindVolume, CacheVolume, NamedVolume,
     bind_volume, cache_volume, named_volume,
-    maven, gradle, node,
+    maven, gradle, mavenw, gradlew, node,
+    MavenWrapperBuilder, GradleWrapperBuilder,
     JDK, JDKProvider, corretto, temurin, graalvm,
     Service, ComposeConfig,
     HealthCheck, HttpCheck, PgCheck, SpringBootCheck,
@@ -41,6 +42,8 @@ class SolutionConfig(Generic[EnvT]):
     build_dir: str = ".build"
     compose_project: str | None = None
     network: str | None = None
+    project_dir: str | None = None
+    registry: str | None = None
     env: EnvT = {}
 ```
 
@@ -51,6 +54,8 @@ class SolutionConfig(Generic[EnvT]):
 | `build_dir` | `str` | `".build"` | Directory for all generated artifacts (clones, caches, logs). Relative to solution root. |
 | `compose_project` | `str \| None` | `None` | Docker Compose project name. Defaults to `name`. |
 | `network` | `str \| None` | `None` | Docker network name. Defaults to `name`. |
+| `project_dir` | `str \| None` | `None` | Overrides the default projects directory; defaults to `{build_dir}/projects`. |
+| `registry` | `str \| None` | `None` | Docker registry prefix for push/pull, e.g. `registry.io/myteam`. |
 | `env` | `EnvT` | `{}` | Environment definition. Use a `BaseEnv` subclass for typed access, or a plain dict. |
 
 **Generic typing:** `SolutionConfig[Env]` gives type-aware access to `config.env` fields in IDE and type checkers.
@@ -325,9 +330,12 @@ Defines how to build a project inside Docker.
 @dataclass
 class Builder:
     docker_image: DockerImage | None = None
-    command: str | None = None
-    command_list: list[str] | None = None
-    script: str | None = None
+    build_command: str | None = None
+    build_command_list: list[str] | None = None
+    build_script: str | None = None
+    clean_command: str | None = None
+    clean_command_list: list[str] | None = None
+    clean_script: str | None = None
     volumes: Volume | list[Volume] = []
     environment: dict[str, str] = {}
     entrypoint: str | None = None
@@ -335,19 +343,24 @@ class Builder:
     timeout: int | None = None
 ```
 
+> **Deprecated aliases:** `command`, `command_list`, and `script` are accepted but deprecated — use `build_command`, `build_command_list`, and `build_script` instead.
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `docker_image` | `DockerImage \| None` | `None` | The Docker image to run, or a Dockerfile to build the image from. |
-| `command` | `str \| None` | `None` | Shell command string: run as `sh -c "<command>"`. |
-| `command_list` | `list[str] \| None` | `None` | Explicit command list, passed directly to Docker without a shell wrapper. |
-| `script` | `str \| None` | `None` | Path to a script file in `assets/scripts/`. Mounted into the container and executed. |
+| `build_command` | `str \| None` | `None` | Shell command string for the build step: run as `sh -c "<command>"`. |
+| `build_command_list` | `list[str] \| None` | `None` | Explicit argv for the build step, passed directly to Docker without a shell wrapper. |
+| `build_script` | `str \| None` | `None` | Path to a build script (relative to solution root). Mounted into the container and executed. |
+| `clean_command` | `str \| None` | `None` | Shell command string for the clean step (used by `localbox clean`). |
+| `clean_command_list` | `list[str] \| None` | `None` | Explicit argv for the clean step. |
+| `clean_script` | `str \| None` | `None` | Path to a clean script (relative to solution root). |
 | `volumes` | `Volume \| list[Volume]` | `[]` | Volume mounts. A single `Volume` is normalized to a list. |
 | `environment` | `dict[str, str]` | `{}` | Environment variables injected into the build container. |
 | `entrypoint` | `str \| None` | `None` | Override the container entrypoint. Set `""` to clear the image's default entrypoint. |
 | `workdir` | `str` | `"/var/src"` | Working directory inside the container. Project sources are mounted here. |
 | `timeout` | `int \| None` | `None` | Build timeout in minutes. `None` = no timeout. |
 
-Command priority: `script` > `command` > `command_list`. Only one should be set.
+Command priority: `build_script` > `build_command` > `build_command_list`. Only one should be set.
 
 A single `Volume` passed to `volumes=` is automatically wrapped in a list.
 
@@ -388,6 +401,19 @@ Auto-configured defaults when using `gradle()`:
 - **Environment:** `GRADLE_USER_HOME=/var/gradle`, `MAVEN_LOCAL_REPO=/var/maven/.m2/repository`
 
 Artifacts found in `build/libs/*.jar` (excluding `-plain`, `-sources`, `-javadoc`, `original-` variants).
+
+---
+
+## MavenWrapperBuilder / GradleWrapperBuilder
+
+Wrapper builders run `./mvnw` / `./gradlew` on a plain JDK image (no Maven or Gradle installed separately). The JDK image is determined from the project's JDK; the tool version comes from the wrapper scripts committed to the repository.
+
+```python
+def mavenw() -> MavenWrapperBuilder
+def gradlew() -> GradleWrapperBuilder
+```
+
+Use when the project ships its own wrapper scripts (`mvnw` / `gradlew` in the repository root).
 
 ---
 
@@ -465,6 +491,22 @@ def gradle(version: str = "8.14") -> GradleBuilder
 ```
 
 Creates a Gradle builder. JDK is specified on the `JavaProject`, not here.
+
+### mavenw
+
+```python
+def mavenw() -> MavenWrapperBuilder
+```
+
+Creates a Maven wrapper builder. Runs `./mvnw` on a plain JDK image. JDK is specified on the `JavaProject`.
+
+### gradlew
+
+```python
+def gradlew() -> GradleWrapperBuilder
+```
+
+Creates a Gradle wrapper builder. Runs `./gradlew` on a plain JDK image. JDK is specified on the `JavaProject`.
 
 ### node
 

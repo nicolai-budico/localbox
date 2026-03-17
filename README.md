@@ -228,9 +228,12 @@ docker compose down                     # Stop services
 localbox config                         # Show solution config
 localbox list projects                  # List projects (tree view)
 localbox list services                  # List services (tree view)
-localbox clean --build                  # Remove .build/ entirely
-localbox clean --compose                # Remove docker-compose.yml
-localbox clean projects:api             # Remove one cloned project
+localbox clean projects              # Run builder clean (mvn clean, gradle clean, etc.)
+localbox prune caches                # Remove .build/maven, .build/gradle, .build/node
+localbox prune builders              # Remove builder Docker images
+localbox prune images                # Remove service Docker images
+localbox prune all                   # Remove all caches + images
+localbox purge                       # Remove entire .build/ directory
 
 # Shell completion
 localbox completion bash > ~/.local/share/bash-completion/completions/localbox
@@ -403,7 +406,7 @@ from localbox.models import Builder, DockerImage, bind_volume
 
 custom = Builder(
     docker_image=DockerImage(image="my-registry/my-builder:latest"),
-    command="make build",
+    build_command="make build",
     environment={"MAKE_OPTS": "-j4"},
     volumes=[bind_volume("./config", "/etc/build-config", readonly=True)],
     timeout=60,  # minutes

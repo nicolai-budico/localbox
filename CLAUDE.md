@@ -19,13 +19,13 @@ localbox/
 │   ├── models/
 │   │   ├── __init__.py          # Public API exports
 │   │   ├── docker_image.py      # DockerImage (universal for builders and services)
-│   │   ├── builder.py           # Builder, VolumeMount, maven(), gradle(), node()
+│   │   ├── builder.py           # Builder, Volume types, maven(), gradle(), mavenw(), gradlew(), node()
 │   │   ├── project.py           # Project, JavaProject, NodeProject, GitConfig
 │   │   ├── service.py           # Service, ComposeConfig
 │   │   └── solution_config.py   # SolutionConfig
 │   ├── commands/
 │   │   ├── project.py           # clone, fetch, switch, build
-│   │   └── service.py           # start, stop, logs, build-image
+│   │   └── service.py           # build-image
 │   ├── builders/
 │   │   ├── build.py             # Unified run_builder() for all project types
 │   │   ├── docker.py            # Service image building (build or pull)
@@ -36,18 +36,17 @@ localbox/
 │   └── myapp/                   # Example solution
 │       ├── solution.py          # Solution config + all projects/services
 │       └── assets/              # Build scripts, patches, configs
-├── tests/                       # Pytest tests (60 tests)
+├── tests/                       # Pytest tests
 ├── pyproject.toml               # Python project config
 └── localdev/                    # Development notes
-    ├── python-localbox.md       # Implementation plan
-    └── tasks.md                 # Task tracking
+    └── release.md               # Release process
 ```
 
 ## Key Models
 
 ### SolutionConfig (`models/solution_config.py`)
 Solution-level settings:
-- `SolutionConfig` - default_branch, build_dir, compose_project, network
+- `SolutionConfig` - name, default_branch, build_dir, compose_project, network, project_dir, registry, env
 
 ### DockerImage (`models/docker_image.py`)
 Universal Docker image config for both builders and services:
@@ -55,20 +54,22 @@ Universal Docker image config for both builders and services:
 
 ### Builder (`models/builder.py`)
 Defines how to build a project in Docker:
-- `Builder` - docker_image (DockerImage), command, volumes, environment
+- `Builder` - docker_image (DockerImage), build_command/build_command_list/build_script (preferred); command/command_list/script (deprecated aliases); clean_command/clean_command_list/clean_script; entrypoint, workdir, timeout; volumes, environment
 - `maven(version)` - pre-configured Maven builder (JDK-agnostic; JDK comes from JavaProject)
 - `gradle(version)` - pre-configured Gradle builder (JDK-agnostic)
+- `mavenw()` - Maven wrapper builder (runs ./mvnw on plain JDK image)
+- `gradlew()` - Gradle wrapper builder (runs ./gradlew on plain JDK image)
 - `node(version)` - pre-configured Node.js builder
 
 ### Project (`models/project.py`)
-- `Project` - base with ergonomic `InitVar` params: `repo`, `branch`, `patches`, `deps`
+- `Project` - base with ergonomic `InitVar` params: `repo`, `branch`, `deps`
 - `JavaProject` - no default builder; must always pass `builder=` explicitly
 - `NodeProject` - defaults to `node()` builder, has `output_dir`
 - Dependencies: pass Project objects to `deps=` (auto-resolves names)
 - Auto-derives `group`/`local_name` from name containing `:` (e.g. `"libs:utils"`)
 
 ### Service (`models/service.py`)
-- `Service` - DockerImage, ComposeConfig, optional shell command
+- `Service` - DockerImage, ComposeConfig
 - `ComposeConfig` - order, ports, depends_on, links, environment, volumes, healthcheck
 - Auto-derives `group`/`local_name` from name containing `:`
 
@@ -127,7 +128,7 @@ services:db:primary         # Single service
 ### Build System
 - All builds run inside Docker containers via the `Builder` model
 - `run_builder()` in `builders/build.py` is the unified build entry point
-- Pre-configured builders: `maven()`, `gradle()`, `node()` factory functions
+- Pre-configured builders: `maven()`, `gradle()`, `mavenw()`, `gradlew()`, `node()` factory functions
 - Project sources mounted at `/var/src` in the container
 - Cache volumes for Maven (`.build/maven`), Gradle (`.build/gradle`), npm (`.build/node`)
 - Custom Dockerfile builders: `dockerfile` path resolves relative to solution root; context is always the Dockerfile's parent directory
@@ -157,7 +158,7 @@ Run all checks in this order:
 ruff format src/ tests/       # auto-format (must run before check)
 ruff check src/ tests/        # lint
 mypy src/localbox/            # type-check
-pytest tests/ -q              # tests (166 items, 3 skipped)
+pytest tests/ -q              # tests (212 items, 3 skipped)
 ```
 All four must pass cleanly. CI will fail the release if any do not.
 
