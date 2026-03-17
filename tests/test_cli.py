@@ -347,29 +347,131 @@ class TestConfig:
 
 
 class TestClean:
-    def test_clean_no_args_shows_hint(self, tmp_path):
+    def test_clean_no_args_shows_help(self, tmp_path):
+        """clean is now a group — no-args shows usage/help."""
+        result = _runner().invoke(cli, ["clean", "--help"])
+        assert result.exit_code == 0
+        assert "projects" in result.output
+
+    def test_clean_projects_calls_run_builder_clean(self, tmp_path):
+        """clean projects invokes run_builder_clean for each cloned project."""
+        proj = Project("myapp", repo="git@example.com/myapp.git")
+        sol = _make_solution(tmp_path, projects=[proj])
+        source_dir = sol.directories.projects / "myapp"
+        source_dir.mkdir(parents=True)
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            with patch(
+                "localbox.builders.build.run_builder_clean", return_value=True
+            ) as mock_clean:
+                result = _runner().invoke(cli, ["clean", "projects"])
+        assert result.exit_code == 0
+        assert mock_clean.called
+
+    def test_clean_projects_skips_uncloned(self, tmp_path):
+        """clean projects prints skip when source_dir does not exist."""
+        proj = Project("myapp", repo="git@example.com/myapp.git")
+        sol = _make_solution(tmp_path, projects=[proj])
+        # Do NOT create source_dir
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            result = _runner().invoke(cli, ["clean", "projects"])
+        assert result.exit_code == 0
+        assert "Skip" in result.output
+        assert "not cloned" in result.output
+
+
+# ---------------------------------------------------------------------------
+# localbox prune
+# ---------------------------------------------------------------------------
+
+
+class TestPrune:
+    def test_prune_caches_all(self, tmp_path):
+        """prune caches removes all discovered CacheVolume directories."""
+        from localbox.models.builder import maven
+
+        proj = Project("myapp", repo="git@example.com/myapp.git")
+        proj.builder = maven()
+        sol = _make_solution(tmp_path, projects=[proj])
+        maven_cache = sol.directories.build / "maven"
+        maven_cache.mkdir(parents=True)
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            result = _runner().invoke(cli, ["prune", "caches"])
+        assert result.exit_code == 0
+        assert not maven_cache.exists()
+        assert "Removed" in result.output
+
+    def test_prune_caches_named(self, tmp_path):
+        """prune caches <name> removes only specified cache directory."""
+        from localbox.models.builder import gradle
+
+        proj = Project("myapp", repo="git@example.com/myapp.git")
+        proj.builder = gradle()
+        sol = _make_solution(tmp_path, projects=[proj])
+        gradle_cache = sol.directories.build / "gradle"
+        maven_cache = sol.directories.build / "maven"
+        gradle_cache.mkdir(parents=True)
+        maven_cache.mkdir(parents=True)
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            result = _runner().invoke(cli, ["prune", "caches", "gradle"])
+        assert result.exit_code == 0
+        assert not gradle_cache.exists()
+        assert maven_cache.exists()  # not removed
+
+    def test_prune_caches_missing_skipped(self, tmp_path):
+        """prune caches prints skip when cache dir does not exist."""
         sol = _make_solution(tmp_path)
         with patch("localbox.cli.load_solution_or_exit", return_value=sol):
-            result = _runner().invoke(cli, ["clean"])
+            result = _runner().invoke(cli, ["prune", "caches", "nonexistent"])
         assert result.exit_code == 0
-        assert "Nothing to clean" in result.output
+        assert "Skip" in result.output
 
-    def test_clean_build_removes_build_dir(self, tmp_path):
+    def test_prune_builders_no_images(self, tmp_path):
+        """prune builders prints 'No builder images' when docker returns empty."""
+
+        sol = _make_solution(tmp_path)
+        mock_result = MagicMock()
+        mock_result.stdout = ""
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            with patch("subprocess.run", return_value=mock_result):
+                result = _runner().invoke(cli, ["prune", "builders"])
+        assert result.exit_code == 0
+        assert "No builder images" in result.output
+
+    def test_prune_images_no_images(self, tmp_path):
+        """prune images prints 'No service images' when docker returns empty."""
+        sol = _make_solution(tmp_path)
+        mock_result = MagicMock()
+        mock_result.stdout = ""
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            with patch("subprocess.run", return_value=mock_result):
+                result = _runner().invoke(cli, ["prune", "images"])
+        assert result.exit_code == 0
+        assert "No service images" in result.output
+
+
+# ---------------------------------------------------------------------------
+# localbox purge
+# ---------------------------------------------------------------------------
+
+
+class TestPurge:
+    def test_purge_removes_build_dir(self, tmp_path):
+        """purge removes the entire .build/ directory."""
         sol = _make_solution(tmp_path)
         sol.directories.build.mkdir(parents=True)
         with patch("localbox.cli.load_solution_or_exit", return_value=sol):
-            result = _runner().invoke(cli, ["clean", "--build"])
+            result = _runner().invoke(cli, ["purge"])
         assert result.exit_code == 0
         assert not sol.directories.build.exists()
+        assert "Removed" in result.output
 
-    def test_clean_compose_removes_compose_file(self, tmp_path):
+    def test_purge_skips_if_missing(self, tmp_path):
+        """purge prints skip when .build/ does not exist."""
         sol = _make_solution(tmp_path)
-        compose_file = tmp_path / "docker-compose.yml"
-        compose_file.write_text("name: test\n")
         with patch("localbox.cli.load_solution_or_exit", return_value=sol):
-            result = _runner().invoke(cli, ["clean", "--compose"])
+            result = _runner().invoke(cli, ["purge"])
         assert result.exit_code == 0
-        assert not compose_file.exists()
+        assert "Skip" in result.output
 
 
 # ---------------------------------------------------------------------------

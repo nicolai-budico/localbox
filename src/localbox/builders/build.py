@@ -256,6 +256,100 @@ def _resolve_build_command(
         return None
 
 
+def _resolve_clean_command(builder: Builder) -> list[str] | None:
+    """Determine the clean command to run."""
+    if builder.clean_script:
+        return ["sh", "/clean.sh"]
+    elif builder.clean_command:
+        return ["sh", "-c", builder.clean_command]
+    elif builder.clean_command_list:
+        return builder.clean_command_list
+    return None
+
+
+def run_builder_clean(
+    solution: Solution,
+    project: Project,
+    source_dir: Path,
+    verbose: bool = False,
+) -> bool:
+    """Run a project's builder clean command in Docker.
+
+    Returns True on success or when no clean command is configured (skip).
+    Returns False on failure.
+    """
+    builder = project.builder
+    if builder is None:
+        console.print(f"[yellow]Skip[/yellow] {project.name} (no builder configured)")
+        return True
+
+    clean_cmd = _resolve_clean_command(builder)
+    if clean_cmd is None:
+        console.print(f"[yellow]Skip[/yellow] {project.name} (no clean command configured)")
+        return True
+
+    # Resolve image tag
+    if project.group:
+        tag_name = f"{project.group}/{project.local_name}"
+    else:
+        tag_name = project.path_name
+
+    try:
+        image_tag = _resolve_builder_image(solution, project, builder, tag_name, verbose)
+    except Exception as e:
+        logger.exception("Error preparing builder image for {}", project.name)
+        console.print(f"[red]Error preparing builder image:[/red] {e}")
+        return False
+
+    uid = os.getuid()
+    gid = os.getgid()
+    container_name = f"localbox-clean-{uuid.uuid4().hex[:8]}"
+
+    docker_cmd = [
+        "docker",
+        "run",
+        "--rm",
+        "--name",
+        container_name,
+        "--user",
+        f"{uid}:{gid}",
+        "-v",
+        f"{source_dir}:{builder.workdir}",
+        "-w",
+        builder.workdir,
+    ]
+
+    if builder.entrypoint is not None:
+        docker_cmd.extend(["--entrypoint", builder.entrypoint])
+
+    for vol in builder.volumes:
+        docker_cmd.extend(_build_volume_args(vol, solution))
+
+    for key, value in builder.environment.items():
+        docker_cmd.extend(["-e", f"{key}={value}"])
+
+    if builder.clean_script:
+        script_path = project.get_script_path(builder.clean_script, solution.root)
+        if script_path and script_path.exists():
+            docker_cmd.extend(["-v", f"{script_path}:/clean.sh:ro"])
+        else:
+            console.print(f"[red]Error:[/red] Clean script not found: {builder.clean_script}")
+            return False
+
+    docker_cmd.append(image_tag)
+    docker_cmd.extend(clean_cmd)
+
+    logger.debug("$ {}", " ".join(docker_cmd))
+    if verbose:
+        console.print(f"  $ {' '.join(docker_cmd)}")
+
+    returncode = _run_docker_with_cleanup(docker_cmd, container_name)
+
+    if returncode != 0:
+        logger.error("docker run exited {} for {} (clean)", returncode, project.name)
+    return returncode == 0
+
+
 def _build_volume_args(vol: Volume, solution: Solution) -> list[str]:
     """Build docker -v arguments for a volume mount."""
     if isinstance(vol, CacheVolume):

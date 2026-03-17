@@ -23,6 +23,7 @@ from localbox.config import (
     find_solution_root,
     load_solution,
 )
+from localbox.models.builder import CacheVolume
 from localbox.models.project import Project
 from localbox.models.service import Service
 from localbox.utils.resolver import TargetError, resolve_targets
@@ -238,50 +239,182 @@ def doctor() -> None:
         sys.exit(1)
 
 
-@cli.command()
-@click.option(
-    "--build",
-    "clean_build",
-    is_flag=True,
-    help="Remove entire .build/ directory (all caches)",
-)
-@click.option(
-    "--compose", "clean_compose", is_flag=True, help="Remove generated docker-compose.yml"
-)
-def clean(clean_build: bool, clean_compose: bool) -> None:
-    """Remove build caches and generated files.
+@cli.group()
+def clean() -> None:
+    """Run builder clean commands inside Docker."""
+    pass
+
+
+@clean.command("projects")
+@click.argument("targets", nargs=-1, shell_complete=complete_targets)
+def clean_projects(targets: tuple[str, ...]) -> None:
+    """Run builder clean for projects (mvn clean, gradle clean, rm node_modules).
 
     Examples:
-        localbox clean --build             # Remove entire .build/ directory (caches)
-        localbox clean --compose           # Remove docker-compose.yml
-        localbox clean --build --compose   # Remove everything generated
+        localbox clean projects              # clean all projects
+        localbox clean projects:api          # clean single project
+    """
+    from localbox.builders.build import run_builder_clean
+
+    solution = load_solution_or_exit()
+    effective = targets if targets else ("projects",)
+    try:
+        projects = resolve_targets(solution, effective, "projects")
+    except TargetError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+    for project in projects:
+        if not isinstance(project, Project):
+            continue
+        source_dir = project.resolve_source_dir(solution.directories.projects)
+        if not source_dir.exists():
+            console.print(f"[yellow]Skip[/yellow] {project.name} (not cloned)")
+            continue
+        console.print(f"[bold]Cleaning[/bold] {project.name}")
+        ok = run_builder_clean(solution, project, source_dir, verbose=False)
+        if not ok:
+            sys.exit(1)
+
+
+@cli.group()
+def prune() -> None:
+    """Remove localbox-managed artifacts."""
+    pass
+
+
+@prune.command("caches")
+@click.argument("names", nargs=-1)
+def prune_caches(names: tuple[str, ...]) -> None:
+    """Remove builder cache directories. Optionally specify names (maven, gradle, node).
+
+    Examples:
+        localbox prune caches              # remove all caches
+        localbox prune caches maven        # remove only maven cache
+        localbox prune caches gradle node  # remove gradle and node, keep maven
     """
     import shutil
 
-    if not clean_build and not clean_compose:
-        console.print("[yellow]Nothing to clean. Use --build / --compose.[/yellow]")
-        console.print("Run [bold]localbox clean --help[/bold] for usage.")
+    solution = load_solution_or_exit()
+    build_dir = solution.directories.build
+
+    if names:
+        targets_to_remove = list(names)
+    else:
+        seen: set[str] = set()
+        for project in solution.projects.values():
+            if project.builder:
+                for vol in project.builder.volumes:
+                    if isinstance(vol, CacheVolume):
+                        seen.add(vol.name)
+        targets_to_remove = sorted(seen)
+
+    if not targets_to_remove:
+        console.print("[yellow]No caches found.[/yellow]")
         return
 
+    for name in targets_to_remove:
+        cache_dir = build_dir / name
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir)
+            console.print(f"[green]Removed[/green] .build/{name}")
+        else:
+            console.print(f"[yellow]Skip[/yellow] .build/{name} (does not exist)")
+
+
+@prune.command("builders")
+@click.argument("targets", nargs=-1, shell_complete=complete_targets)
+def prune_builders(targets: tuple[str, ...]) -> None:
+    """Remove builder Docker images.
+
+    Examples:
+        localbox prune builders              # remove all builder images
+        localbox prune builders projects:api # remove image for specific project
+    """
     solution = load_solution_or_exit()
+    _prune_docker_images(solution, "builder", targets)
 
-    # --- Entire .build/ directory ---
-    if clean_build:
-        build_dir = solution.directories.build
-        if build_dir.exists():
-            shutil.rmtree(build_dir)
-            console.print(f"[green]Removed[/green] {build_dir.relative_to(solution.root)}/")
-        else:
-            console.print("[yellow]Skip[/yellow] .build/ (does not exist)")
 
-    # --- Generated docker-compose.yml ---
-    if clean_compose:
-        compose_file = solution.root / "docker-compose.yml"
-        if compose_file.exists():
-            compose_file.unlink()
-            console.print("[green]Removed[/green] docker-compose.yml")
+@prune.command("images")
+@click.argument("targets", nargs=-1, shell_complete=complete_targets)
+def prune_images(targets: tuple[str, ...]) -> None:
+    """Remove service Docker images.
+
+    Examples:
+        localbox prune images              # remove all service images
+        localbox prune images services:db  # remove image for specific service
+    """
+    solution = load_solution_or_exit()
+    _prune_docker_images(solution, "service", targets)
+
+
+@prune.command("all")
+@click.pass_context
+def prune_all(ctx: click.Context) -> None:
+    """Remove all caches, builder images, and service images."""
+    ctx.invoke(prune_caches)
+    ctx.invoke(prune_builders)
+    ctx.invoke(prune_images)
+
+
+def _prune_docker_images(solution: Solution, image_type: str, targets: tuple[str, ...]) -> None:
+    """Remove Docker images of the given type (builder or service)."""
+    import subprocess
+
+    reference = f"{solution.name}/{image_type}/*"
+    result = subprocess.run(
+        [
+            "docker",
+            "image",
+            "ls",
+            "--filter",
+            f"reference={reference}",
+            "--format",
+            "{{.Repository}}:{{.Tag}}",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    all_images = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+    if targets:
+        try:
+            items = resolve_targets(
+                solution,
+                targets,
+                "projects" if image_type == "builder" else "services",
+            )
+        except TargetError as e:
+            console.print(f"[red]Error:[/red] {e}")
+            sys.exit(1)
+        fragments = {f"/{image_type}/{item.path_name}:" for item in items}
+        images = [img for img in all_images if any(f in img for f in fragments)]
+    else:
+        images = all_images
+
+    if not images:
+        console.print(f"[yellow]No {image_type} images found.[/yellow]")
+        return
+
+    for image in images:
+        r = subprocess.run(["docker", "image", "rm", image], capture_output=True, text=True)
+        if r.returncode == 0:
+            console.print(f"[green]Removed[/green] {image}")
         else:
-            console.print("[yellow]Skip[/yellow] docker-compose.yml (does not exist)")
+            console.print(f"[red]Failed[/red] {image}: {r.stderr.strip()}")
+
+
+@cli.command()
+def purge() -> None:
+    """Remove entire .build/ directory (caches, logs, all build artifacts)."""
+    import shutil
+
+    solution = load_solution_or_exit()
+    build_dir = solution.directories.build
+    if build_dir.exists():
+        shutil.rmtree(build_dir)
+        console.print("[green]Removed[/green] .build/")
+    else:
+        console.print("[yellow]Skip[/yellow] .build/ (does not exist)")
 
 
 class _ParsedOverride:
