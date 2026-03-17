@@ -5,7 +5,7 @@ on:
 
 jobs:
   release:
-    name: Bump version, fast-forward v0.1, tag and release
+    name: Fast-forward v0.1, bump version, tag and release
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -13,10 +13,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: v0.1
           fetch-depth: 0
 
-      - name: Read current version
+      - name: Read current version from v0.1
         id: current
         run: |
           VERSION=$(python3 -c "
@@ -34,7 +34,10 @@ jobs:
           P[2]=$(( P[2] + 1 ))
           echo "version=${P[0]}.${P[1]}.${P[2]}" >> "$GITHUB_OUTPUT"
 
-      - name: Bump version, commit, push to main
+      - name: Fast-forward v0.1 to main
+        run: git merge --ff-only origin/main
+
+      - name: Bump version and commit on v0.1
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -42,10 +45,7 @@ jobs:
           sed -i "s/^version = \".*\"/version = \"$NEXT\"/" pyproject.toml
           git add pyproject.toml
           git commit -m "chore: release v$NEXT"
-          git push origin main
-
-      - name: Fast-forward v0.1 to main
-        run: git push origin HEAD:v0.1
+          git push origin v0.1
 
       - name: Tag and create GitHub Release
         env:
