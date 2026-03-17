@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from enum import Enum
@@ -79,10 +80,18 @@ class Builder:
     # Image source
     docker_image: DockerImage | None = None
 
-    # Build command (one of these)
-    command: str | None = None  # Shell command string
-    command_list: list[str] | None = None  # Explicit command list
-    script: str | None = None  # Script file to mount and run
+    # Build command — prefer build_* names; choose one:
+    #   build_command:      shell string, run via sh -c "…"  — good for pipes/redirects
+    #   build_command_list: explicit argv list, no shell     — good for exact arg control
+    #   build_script:       script file mounted at /build.sh
+    build_command: str | None = None
+    build_command_list: list[str] | None = None
+    build_script: str | None = None
+
+    # Deprecated aliases — use build_* instead
+    command: str | None = None
+    command_list: list[str] | None = None
+    script: str | None = None
 
     # Container config
     volumes: list[Volume] = field(default_factory=list)
@@ -94,14 +103,37 @@ class Builder:
     # For large Maven/Gradle projects, set to 30–60. Default is no timeout.
     timeout: int | None = None
 
-    # Clean command (one of these — used by `localbox clean projects`)
-    clean_command: str | None = None  # Shell command string
-    clean_command_list: list[str] | None = None  # Explicit command list
-    clean_script: str | None = None  # Script file to mount and run
+    # Clean command — same pattern as build_command/build_command_list/build_script
+    clean_command: str | None = None
+    clean_command_list: list[str] | None = None
+    clean_script: str | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.volumes, Volume):  # type: ignore[arg-type]
             self.volumes = [self.volumes]  # type: ignore[assignment]
+
+        # Migrate deprecated fields
+        if self.script is not None and self.build_script is None:
+            warnings.warn(
+                "Builder.script is deprecated, use build_script instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.build_script = self.script
+        if self.command is not None and self.build_command is None:
+            warnings.warn(
+                "Builder.command is deprecated, use build_command instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.build_command = self.command
+        if self.command_list is not None and self.build_command_list is None:
+            warnings.warn(
+                "Builder.command_list is deprecated, use build_command_list instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.build_command_list = self.command_list
 
     @property
     def uses_dockerfile(self) -> bool:
@@ -163,9 +195,9 @@ class MavenBuilder(JavaBuilder):
             self.volumes = [
                 CacheVolume(name="maven", container="/var/maven/.m2"),
             ]
-        if not self.command_list and not self.command:
+        if not self.build_command_list and not self.build_command:
             self.entrypoint = ""
-            self.command_list = [
+            self.build_command_list = [
                 "mvn",
                 "-Duser.home=/var/maven",
                 "-Dmaven.repo.local=/var/maven/.m2/repository",
@@ -238,8 +270,8 @@ class GradleBuilder(JavaBuilder):
                 CacheVolume(name="gradle", container="/var/gradle"),
                 CacheVolume(name="maven", container="/var/maven/.m2"),
             ]
-        if not self.command_list and not self.command:
-            self.command_list = [
+        if not self.build_command_list and not self.build_command:
+            self.build_command_list = [
                 "gradle",
                 "build",
                 "-x",
@@ -313,9 +345,9 @@ class MavenWrapperBuilder(JavaBuilder):
     def __post_init__(self) -> None:
         if not self.volumes:
             self.volumes = [CacheVolume(name="maven", container="/var/maven/.m2")]
-        if not self.command_list and not self.command:
+        if not self.build_command_list and not self.build_command:
             self.entrypoint = ""
-            self.command_list = [
+            self.build_command_list = [
                 "./mvnw",
                 "-Duser.home=/var/maven",
                 "-Dmaven.repo.local=/var/maven/.m2/repository",
@@ -374,8 +406,8 @@ class GradleWrapperBuilder(JavaBuilder):
                 CacheVolume(name="gradle", container="/var/gradle"),
                 CacheVolume(name="maven", container="/var/maven/.m2"),
             ]
-        if not self.command_list and not self.command:
-            self.command_list = [
+        if not self.build_command_list and not self.build_command:
+            self.build_command_list = [
                 "./gradlew",
                 "build",
                 "-x",
@@ -480,7 +512,7 @@ def node(version: int = 20) -> Builder:
     """
     return Builder(
         docker_image=DockerImage(name=f"node-{version}", image=f"node:{version}"),
-        command="npm ci && npm run build",
+        build_command="npm ci && npm run build",
         clean_command="rm -rf node_modules",
         volumes=[
             CacheVolume(name="node", container="/home/node/.npm"),

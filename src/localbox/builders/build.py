@@ -170,12 +170,12 @@ def run_builder(
         docker_cmd.extend(["-e", f"{key}={value}"])
 
     # Script mount
-    if builder.script:
-        script_path = project.get_script_path(builder.script, solution.root)
+    if builder.build_script:
+        script_path = project.get_script_path(builder.build_script, solution.root)
         if script_path and script_path.exists():
             docker_cmd.extend(["-v", f"{script_path}:/build.sh:ro"])
         else:
-            console.print(f"[red]Error:[/red] Build script not found: {builder.script}")
+            console.print(f"[red]Error:[/red] Build script not found: {builder.build_script}")
             return False
 
     docker_cmd.append(image_tag)
@@ -245,12 +245,12 @@ def _resolve_build_command(
     builder: Builder, project: Project, solution: Solution
 ) -> list[str] | None:
     """Determine the build command to run."""
-    if builder.script:
+    if builder.build_script:
         return ["sh", "/build.sh"]
-    elif builder.command:
-        return ["sh", "-c", builder.command]
-    elif builder.command_list:
-        return builder.command_list
+    elif builder.build_command:
+        return ["sh", "-c", builder.build_command]
+    elif builder.build_command_list:
+        return builder.build_command_list
     else:
         console.print(f"[red]Error:[/red] Builder for {project.name} has no command")
         return None

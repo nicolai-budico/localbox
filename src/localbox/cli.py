@@ -247,7 +247,8 @@ def clean() -> None:
 
 @clean.command("projects")
 @click.argument("targets", nargs=-1, shell_complete=complete_targets)
-def clean_projects(targets: tuple[str, ...]) -> None:
+@pass_context
+def clean_projects(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
     """Run builder clean for projects (mvn clean, gradle clean, rm node_modules).
 
     Examples:
@@ -271,7 +272,7 @@ def clean_projects(targets: tuple[str, ...]) -> None:
             console.print(f"[yellow]Skip[/yellow] {project.name} (not cloned)")
             continue
         console.print(f"[bold]Cleaning[/bold] {project.name}")
-        ok = run_builder_clean(solution, project, source_dir, verbose=False)
+        ok = run_builder_clean(solution, project, source_dir, verbose=ctx.verbose)
         if not ok:
             sys.exit(1)
 
@@ -323,7 +324,8 @@ def prune_caches(names: tuple[str, ...]) -> None:
 
 @prune.command("builders")
 @click.argument("targets", nargs=-1, shell_complete=complete_targets)
-def prune_builders(targets: tuple[str, ...]) -> None:
+@pass_context
+def prune_builders(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
     """Remove builder Docker images.
 
     Examples:
@@ -331,12 +333,13 @@ def prune_builders(targets: tuple[str, ...]) -> None:
         localbox prune builders projects:api # remove image for specific project
     """
     solution = load_solution_or_exit()
-    _prune_docker_images(solution, "builder", targets)
+    _prune_docker_images(solution, "builder", targets, verbose=ctx.verbose)
 
 
 @prune.command("images")
 @click.argument("targets", nargs=-1, shell_complete=complete_targets)
-def prune_images(targets: tuple[str, ...]) -> None:
+@pass_context
+def prune_images(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
     """Remove service Docker images.
 
     Examples:
@@ -344,7 +347,7 @@ def prune_images(targets: tuple[str, ...]) -> None:
         localbox prune images services:db  # remove image for specific service
     """
     solution = load_solution_or_exit()
-    _prune_docker_images(solution, "service", targets)
+    _prune_docker_images(solution, "service", targets, verbose=ctx.verbose)
 
 
 @prune.command("all")
@@ -356,24 +359,25 @@ def prune_all(ctx: click.Context) -> None:
     ctx.invoke(prune_images)
 
 
-def _prune_docker_images(solution: Solution, image_type: str, targets: tuple[str, ...]) -> None:
+def _prune_docker_images(
+    solution: Solution, image_type: str, targets: tuple[str, ...], verbose: bool = False
+) -> None:
     """Remove Docker images of the given type (builder or service)."""
     import subprocess
 
     reference = f"{solution.name}/{image_type}/*"
-    result = subprocess.run(
-        [
-            "docker",
-            "image",
-            "ls",
-            "--filter",
-            f"reference={reference}",
-            "--format",
-            "{{.Repository}}:{{.Tag}}",
-        ],
-        capture_output=True,
-        text=True,
-    )
+    ls_cmd = [
+        "docker",
+        "image",
+        "ls",
+        "--filter",
+        f"reference={reference}",
+        "--format",
+        "{{.Repository}}:{{.Tag}}",
+    ]
+    if verbose:
+        console.print(f"  $ {' '.join(ls_cmd)}")
+    result = subprocess.run(ls_cmd, capture_output=True, text=True)
     all_images = [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
     if targets:

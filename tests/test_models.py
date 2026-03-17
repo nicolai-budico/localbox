@@ -69,10 +69,10 @@ class TestBuilder:
         b = maven("3.9")
         # Image is resolved using JDK from project
         assert b.resolve_image_tag(JDK(8)) == "maven:3.9-amazoncorretto-8"
-        assert b.command_list is not None
-        assert "mvn" in b.command_list
-        assert "install" in b.command_list
-        assert "-Dmaven.test.skip=true" in b.command_list
+        assert b.build_command_list is not None
+        assert "mvn" in b.build_command_list
+        assert "install" in b.build_command_list
+        assert "-Dmaven.test.skip=true" in b.build_command_list
         assert b.entrypoint == ""
         assert len(b.volumes) == 1
         assert isinstance(b.volumes[0], CacheVolume)
@@ -93,11 +93,11 @@ class TestBuilder:
         b = gradle("8.14")
         # Image is resolved using JDK from project
         assert b.resolve_image_tag(JDK(21)) == "gradle:8.14-jdk21"
-        assert b.command_list is not None
-        assert "gradle" in b.command_list
-        assert "build" in b.command_list
-        assert "--no-daemon" in b.command_list
-        assert "-Dmaven.repo.local=/var/maven/.m2/repository" in b.command_list
+        assert b.build_command_list is not None
+        assert "gradle" in b.build_command_list
+        assert "build" in b.build_command_list
+        assert "--no-daemon" in b.build_command_list
+        assert "-Dmaven.repo.local=/var/maven/.m2/repository" in b.build_command_list
         assert b.environment.get("GRADLE_USER_HOME") == "/var/gradle"
         assert b.environment.get("MAVEN_LOCAL_REPO") == "/var/maven/.m2/repository"
         assert len(b.volumes) == 2
@@ -115,8 +115,8 @@ class TestBuilder:
         b = node(20)
         assert b.docker_image.image == "node:20"
         assert b.docker_image.name == "node-20"
-        assert b.command == "npm ci && npm run build"
-        assert b.command_list is None
+        assert b.build_command == "npm ci && npm run build"
+        assert b.build_command_list is None
         assert b.environment.get("npm_config_cache") == "/home/node/.npm"
         assert len(b.volumes) == 1
         assert isinstance(b.volumes[0], CacheVolume)
@@ -142,7 +142,7 @@ class TestBuilder:
         """Custom builder with image."""
         b = Builder(
             docker_image=DockerImage(name="custom", image="my-custom-image:latest"),
-            command="make build",
+            build_command="make build",
         )
         assert b.docker_image.image == "my-custom-image:latest"
         assert b.resolve_image_tag() == "my-custom-image:latest"
@@ -181,6 +181,45 @@ class TestBuilder:
         assert v.container == "/var/lib/postgresql/data"
         assert v.readonly is False
 
+    def test_deprecated_command_migrates(self):
+        """Builder.command is deprecated; value migrates to build_command."""
+        with pytest.warns(DeprecationWarning, match="build_command"):
+            b = Builder(
+                docker_image=DockerImage(name="t", image="t"),
+                command="make build",
+            )
+        assert b.build_command == "make build"
+
+    def test_deprecated_command_list_migrates(self):
+        """Builder.command_list is deprecated; value migrates to build_command_list."""
+        with pytest.warns(DeprecationWarning, match="build_command_list"):
+            b = Builder(
+                docker_image=DockerImage(name="t", image="t"),
+                command_list=["make", "build"],
+            )
+        assert b.build_command_list == ["make", "build"]
+
+    def test_deprecated_script_migrates(self):
+        """Builder.script is deprecated; value migrates to build_script."""
+        with pytest.warns(DeprecationWarning, match="build_script"):
+            b = Builder(
+                docker_image=DockerImage(name="t", image="t"),
+                script="build.sh",
+            )
+        assert b.build_script == "build.sh"
+
+    def test_build_command_no_deprecation_warning(self):
+        """build_command does not trigger a deprecation warning."""
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            b = Builder(
+                docker_image=DockerImage(name="t", image="t"),
+                build_command="make build",
+            )
+        assert b.build_command == "make build"
+
     def test_maven_clean_command_list(self):
         """maven() should have clean_command_list containing 'clean'."""
         b = maven()
@@ -203,9 +242,9 @@ class TestBuilder:
     def test_maven_wrapper_builder(self):
         """MavenWrapperBuilder should run ./mvnw on a plain JDK image."""
         b = mavenw()
-        assert b.command_list is not None
-        assert "./mvnw" in b.command_list
-        assert "install" in b.command_list
+        assert b.build_command_list is not None
+        assert "./mvnw" in b.build_command_list
+        assert "install" in b.build_command_list
         assert b.clean_command_list is not None
         assert "./mvnw" in b.clean_command_list
         assert "clean" in b.clean_command_list
@@ -220,9 +259,9 @@ class TestBuilder:
     def test_gradle_wrapper_builder(self):
         """GradleWrapperBuilder should run ./gradlew on a plain JDK image."""
         b = gradlew()
-        assert b.command_list is not None
-        assert "./gradlew" in b.command_list
-        assert "build" in b.command_list
+        assert b.build_command_list is not None
+        assert "./gradlew" in b.build_command_list
+        assert "build" in b.build_command_list
         assert b.clean_command_list is not None
         assert "./gradlew" in b.clean_command_list
         assert "clean" in b.clean_command_list
