@@ -52,6 +52,19 @@ class JDK:
             case _:
                 return f"jdk{self.version}"
 
+    def jdk_image(self) -> str:
+        """Returns Docker image for JDK (full JDK, not JRE).
+
+        Used by wrapper builders (mavenw, gradlew) that need a plain JDK image.
+        """
+        match self.provider:
+            case JDKProvider.CORRETTO:
+                return f"amazoncorretto:{self.version}"
+            case JDKProvider.TEMURIN:
+                return f"eclipse-temurin:{self.version}"
+            case JDKProvider.GRAALVM:
+                return f"ghcr.io/graalvm/jdk:{self.version}"
+
     def runtime_image(self) -> str:
         """Returns Docker image for runtime (JRE).
 

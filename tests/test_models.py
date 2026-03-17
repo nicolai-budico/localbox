@@ -10,7 +10,9 @@ from localbox.models.builder import (
     bind_volume,
     cache_volume,
     gradle,
+    gradlew,
     maven,
+    mavenw,
     named_volume,
     node,
 )
@@ -178,6 +180,57 @@ class TestBuilder:
         assert v.name == "postgresql_data"
         assert v.container == "/var/lib/postgresql/data"
         assert v.readonly is False
+
+    def test_maven_clean_command_list(self):
+        """maven() should have clean_command_list containing 'clean'."""
+        b = maven()
+        assert b.clean_command_list is not None
+        assert "clean" in b.clean_command_list
+        assert "mvn" in b.clean_command_list
+
+    def test_gradle_clean_command_list(self):
+        """gradle() should have clean_command_list containing 'clean'."""
+        b = gradle()
+        assert b.clean_command_list is not None
+        assert "clean" in b.clean_command_list
+        assert "gradle" in b.clean_command_list
+
+    def test_node_clean_command(self):
+        """node() should have clean_command set to 'rm -rf node_modules'."""
+        b = node()
+        assert b.clean_command == "rm -rf node_modules"
+
+    def test_maven_wrapper_builder(self):
+        """MavenWrapperBuilder should run ./mvnw on a plain JDK image."""
+        b = mavenw()
+        assert b.command_list is not None
+        assert "./mvnw" in b.command_list
+        assert "install" in b.command_list
+        assert b.clean_command_list is not None
+        assert "./mvnw" in b.clean_command_list
+        assert "clean" in b.clean_command_list
+        # Default JDK 8 Corretto
+        assert b.resolve_image_tag(JDK(8)) == "amazoncorretto:8"
+        # With JDK 17
+        assert b.resolve_image_tag(JDK(17)) == "amazoncorretto:17"
+        assert len(b.volumes) == 1
+        assert isinstance(b.volumes[0], CacheVolume)
+        assert b.volumes[0].name == "maven"
+
+    def test_gradle_wrapper_builder(self):
+        """GradleWrapperBuilder should run ./gradlew on a plain JDK image."""
+        b = gradlew()
+        assert b.command_list is not None
+        assert "./gradlew" in b.command_list
+        assert "build" in b.command_list
+        assert b.clean_command_list is not None
+        assert "./gradlew" in b.clean_command_list
+        assert "clean" in b.clean_command_list
+        # Default JDK 21 Corretto
+        assert b.resolve_image_tag(JDK(21)) == "amazoncorretto:21"
+        names = [v.name for v in b.volumes]
+        assert "gradle" in names
+        assert "maven" in names
 
 
 class TestProject:
@@ -459,6 +512,18 @@ class TestJDK:
         assert corretto(8).provider == JDKProvider.CORRETTO
         assert temurin(17).provider == JDKProvider.TEMURIN
         assert graalvm(21).provider == JDKProvider.GRAALVM
+
+    def test_jdk_image_corretto(self):
+        """JDK.jdk_image() should return plain JDK image for Corretto."""
+        assert JDK(21).jdk_image() == "amazoncorretto:21"
+
+    def test_jdk_image_temurin(self):
+        """JDK.jdk_image() should return plain JDK image for Temurin."""
+        assert temurin(17).jdk_image() == "eclipse-temurin:17"
+
+    def test_jdk_image_graalvm(self):
+        """JDK.jdk_image() should return GraalVM JDK image."""
+        assert graalvm(21).jdk_image() == "ghcr.io/graalvm/jdk:21"
 
 
 class TestJavaProject:
