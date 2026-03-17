@@ -94,6 +94,11 @@ class Builder:
     # For large Maven/Gradle projects, set to 30–60. Default is no timeout.
     timeout: int | None = None
 
+    # Clean command (one of these — used by `localbox clean projects`)
+    clean_command: str | None = None  # Shell command string
+    clean_command_list: list[str] | None = None  # Explicit command list
+    clean_script: str | None = None  # Script file to mount and run
+
     def __post_init__(self) -> None:
         if isinstance(self.volumes, Volume):  # type: ignore[arg-type]
             self.volumes = [self.volumes]  # type: ignore[assignment]
@@ -167,6 +172,13 @@ class MavenBuilder(JavaBuilder):
                 "install",
                 "-Dmaven.test.skip=true",
             ]
+        if not self.clean_command_list and not self.clean_command:
+            self.clean_command_list = [
+                "mvn",
+                "-Duser.home=/var/maven",
+                "-Dmaven.repo.local=/var/maven/.m2/repository",
+                "clean",
+            ]
         super().__post_init__()
 
     def resolve_image_tag(self, jdk: JDK | None = None) -> str:
@@ -239,6 +251,13 @@ class GradleBuilder(JavaBuilder):
                 "GRADLE_USER_HOME": "/var/gradle",
                 "MAVEN_LOCAL_REPO": "/var/maven/.m2/repository",
             }
+        if not self.clean_command_list and not self.clean_command:
+            self.clean_command_list = [
+                "gradle",
+                "clean",
+                "--no-daemon",
+                "-Dmaven.repo.local=/var/maven/.m2/repository",
+            ]
         super().__post_init__()
 
     def resolve_image_tag(self, jdk: JDK | None = None) -> str:
@@ -278,6 +297,128 @@ class GradleBuilder(JavaBuilder):
             and not any(p.name.startswith(pre) for pre in excluded_prefixes)
         ]
 
+        return filtered[0] if filtered else None
+
+
+@dataclass
+class MavenWrapperBuilder(JavaBuilder):
+    """Maven Wrapper builder — runs ./mvnw on a plain JDK image.
+
+    JDK image is determined from the project's JDK; Maven version comes from the wrapper.
+
+    Usage:
+        builder = mavenw()
+    """
+
+    def __post_init__(self) -> None:
+        if not self.volumes:
+            self.volumes = [CacheVolume(name="maven", container="/var/maven/.m2")]
+        if not self.command_list and not self.command:
+            self.entrypoint = ""
+            self.command_list = [
+                "./mvnw",
+                "-Duser.home=/var/maven",
+                "-Dmaven.repo.local=/var/maven/.m2/repository",
+                "install",
+                "-Dmaven.test.skip=true",
+            ]
+        if not self.clean_command_list and not self.clean_command:
+            self.clean_command_list = [
+                "./mvnw",
+                "-Duser.home=/var/maven",
+                "-Dmaven.repo.local=/var/maven/.m2/repository",
+                "clean",
+            ]
+        super().__post_init__()
+
+    def resolve_image_tag(self, jdk: JDK | None = None) -> str:
+        if jdk is None:
+            jdk = JDK(8)
+        return jdk.jdk_image()
+
+    def get_artifact_pattern(self, packaging: Packaging) -> str:
+        return f"target/*.{packaging.value}"
+
+    def detect_packaging(self, project_dir: Path) -> Packaging:
+        pom_path = project_dir / "pom.xml"
+        if not pom_path.exists():
+            return Packaging.JAR
+        try:
+            tree = ET.parse(pom_path)
+            root = tree.getroot()
+            ns = ""
+            if root.tag.startswith("{"):
+                ns = root.tag.split("}")[0] + "}"
+            packaging_elem = root.find(f"{ns}packaging")
+            if packaging_elem is not None and packaging_elem.text:
+                if packaging_elem.text.lower() == "war":
+                    return Packaging.WAR
+        except ET.ParseError:
+            pass
+        return Packaging.JAR
+
+
+@dataclass
+class GradleWrapperBuilder(JavaBuilder):
+    """Gradle Wrapper builder — runs ./gradlew on a plain JDK image.
+
+    JDK image is determined from the project's JDK; Gradle version comes from the wrapper.
+
+    Usage:
+        builder = gradlew()
+    """
+
+    def __post_init__(self) -> None:
+        if not self.volumes:
+            self.volumes = [
+                CacheVolume(name="gradle", container="/var/gradle"),
+                CacheVolume(name="maven", container="/var/maven/.m2"),
+            ]
+        if not self.command_list and not self.command:
+            self.command_list = [
+                "./gradlew",
+                "build",
+                "-x",
+                "test",
+                "--no-daemon",
+                "-Dmaven.repo.local=/var/maven/.m2/repository",
+            ]
+            self.environment = {
+                "GRADLE_USER_HOME": "/var/gradle",
+                "MAVEN_LOCAL_REPO": "/var/maven/.m2/repository",
+            }
+        if not self.clean_command_list and not self.clean_command:
+            self.clean_command_list = ["./gradlew", "clean", "--no-daemon"]
+        super().__post_init__()
+
+    def resolve_image_tag(self, jdk: JDK | None = None) -> str:
+        if jdk is None:
+            jdk = JDK(21)
+        return jdk.jdk_image()
+
+    def get_artifact_pattern(self, packaging: Packaging) -> str:
+        return f"build/libs/*.{packaging.value}"
+
+    def detect_packaging(self, project_dir: Path) -> Packaging:
+        for build_file in ["build.gradle", "build.gradle.kts"]:
+            build_path = project_dir / build_file
+            if build_path.exists():
+                content = build_path.read_text()
+                if "plugin: 'war'" in content or "id 'war'" in content or 'id("war")' in content:
+                    return Packaging.WAR
+        return Packaging.JAR
+
+    def find_artifact(self, project_dir: Path, packaging: Packaging) -> Path | None:
+        pattern = self.get_artifact_pattern(packaging)
+        candidates = list(project_dir.glob(pattern))
+        excluded_suffixes = ("-plain.", "-sources.", "-javadoc.")
+        excluded_prefixes = ("original-",)
+        filtered = [
+            p
+            for p in candidates
+            if not any(suf in p.name for suf in excluded_suffixes)
+            and not any(p.name.startswith(pre) for pre in excluded_prefixes)
+        ]
         return filtered[0] if filtered else None
 
 
@@ -321,6 +462,16 @@ def gradle(version: str = "8.14") -> GradleBuilder:
     return GradleBuilder(version=version)
 
 
+def mavenw() -> MavenWrapperBuilder:
+    """Create a Maven Wrapper builder (runs ./mvnw on a plain JDK image)."""
+    return MavenWrapperBuilder()
+
+
+def gradlew() -> GradleWrapperBuilder:
+    """Create a Gradle Wrapper builder (runs ./gradlew on a plain JDK image)."""
+    return GradleWrapperBuilder()
+
+
 def node(version: int = 20) -> Builder:
     """Create a Node.js builder.
 
@@ -330,6 +481,7 @@ def node(version: int = 20) -> Builder:
     return Builder(
         docker_image=DockerImage(name=f"node-{version}", image=f"node:{version}"),
         command="npm ci && npm run build",
+        clean_command="rm -rf node_modules",
         volumes=[
             CacheVolume(name="node", container="/home/node/.npm"),
         ],
