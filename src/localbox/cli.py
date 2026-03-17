@@ -256,6 +256,7 @@ def clean_projects(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
         localbox clean projects:api          # clean single project
     """
     from localbox.builders.build import run_builder_clean
+    from localbox.commands.project import _print_summary
 
     solution = load_solution_or_exit()
     effective = targets if targets else ("projects",)
@@ -264,17 +265,22 @@ def clean_projects(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
     except TargetError as e:
         console.print(f"[red]Error:[/red] {e}")
         sys.exit(1)
+    results: list[tuple[str, str]] = []
     for project in projects:
         if not isinstance(project, Project):
             continue
         source_dir = project.resolve_source_dir(solution.directories.projects)
         if not source_dir.exists():
             console.print(f"[yellow]Skip[/yellow] {project.name} (not cloned)")
+            results.append((project.name or "", "skipped"))
             continue
         console.print(f"[bold]Cleaning[/bold] {project.name}")
         ok = run_builder_clean(solution, project, source_dir, verbose=ctx.verbose)
-        if not ok:
-            sys.exit(1)
+        results.append((project.name or "", "cleaned" if ok else "failed"))
+    if len(results) > 1 or any(s == "failed" for _, s in results):
+        _print_summary(results, "Clean Summary")
+    if any(s == "failed" for _, s in results):
+        sys.exit(1)
 
 
 @cli.group()

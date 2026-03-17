@@ -378,6 +378,176 @@ class TestClean:
         assert "Skip" in result.output
         assert "not cloned" in result.output
 
+    def test_clean_projects_summary_shown_for_multiple(self, tmp_path):
+        """clean projects shows summary table when multiple projects are processed."""
+        proj1 = Project("app1", repo="git@example.com/app1.git")
+        proj2 = Project("app2", repo="git@example.com/app2.git")
+        sol = _make_solution(tmp_path, projects=[proj1, proj2])
+        for p in [proj1, proj2]:
+            (sol.directories.projects / p.name).mkdir(parents=True)
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            with patch("localbox.builders.build.run_builder_clean", return_value=True):
+                result = _runner().invoke(cli, ["clean", "projects"])
+        assert result.exit_code == 0
+        assert "Clean Summary" in result.output
+
+    def test_clean_projects_summary_shown_on_failure(self, tmp_path):
+        """clean projects shows summary and exits 1 on failure."""
+        proj = Project("myapp", repo="git@example.com/myapp.git")
+        sol = _make_solution(tmp_path, projects=[proj])
+        (sol.directories.projects / "myapp").mkdir(parents=True)
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            with patch("localbox.builders.build.run_builder_clean", return_value=False):
+                result = _runner().invoke(cli, ["clean", "projects"])
+        assert result.exit_code == 1
+        assert "Clean Summary" in result.output
+        assert "Failed" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Summary table tests — clone / fetch / switch / build services
+# ---------------------------------------------------------------------------
+
+
+class TestCloneProjectsSummary:
+    def _sol(self, tmp_path):
+        p1 = Project("app1", repo="git@example.com/app1.git")
+        p2 = Project("app2", repo="git@example.com/app2.git")
+        return _make_solution(tmp_path, projects=[p1, p2])
+
+    def test_no_summary_for_single_success(self, tmp_path):
+        proj = Project("app1", repo="git@example.com/app1.git")
+        sol = _make_solution(tmp_path, projects=[proj])
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            with patch("localbox.commands.project.clone_project", return_value="cloned"):
+                result = _runner().invoke(cli, ["clone", "projects"])
+        assert result.exit_code == 0
+        assert "Clone Summary" not in result.output
+
+    def test_summary_shown_for_multiple(self, tmp_path):
+        sol = self._sol(tmp_path)
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            with patch("localbox.commands.project.clone_project", side_effect=["cloned", "cloned"]):
+                result = _runner().invoke(cli, ["clone", "projects"])
+        assert result.exit_code == 0
+        assert "Clone Summary" in result.output
+
+    def test_summary_shown_on_single_failure(self, tmp_path):
+        proj = Project("app1", repo="git@example.com/app1.git")
+        sol = _make_solution(tmp_path, projects=[proj])
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            with patch("localbox.commands.project.clone_project", return_value="failed"):
+                result = _runner().invoke(cli, ["clone", "projects"])
+        assert result.exit_code == 0
+        assert "Clone Summary" in result.output
+
+
+class TestFetchProjectsSummary:
+    def _sol(self, tmp_path):
+        p1 = Project("app1", repo="git@example.com/app1.git")
+        p2 = Project("app2", repo="git@example.com/app2.git")
+        return _make_solution(tmp_path, projects=[p1, p2])
+
+    def test_no_summary_for_single_success(self, tmp_path):
+        proj = Project("app1", repo="git@example.com/app1.git")
+        sol = _make_solution(tmp_path, projects=[proj])
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            with patch("localbox.commands.project.fetch_project", return_value="fetched"):
+                result = _runner().invoke(cli, ["fetch", "projects"])
+        assert result.exit_code == 0
+        assert "Fetch Summary" not in result.output
+
+    def test_summary_shown_for_multiple(self, tmp_path):
+        sol = self._sol(tmp_path)
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            with patch(
+                "localbox.commands.project.fetch_project", side_effect=["fetched", "fetched"]
+            ):
+                result = _runner().invoke(cli, ["fetch", "projects"])
+        assert result.exit_code == 0
+        assert "Fetch Summary" in result.output
+
+    def test_summary_shown_on_single_failure(self, tmp_path):
+        proj = Project("app1", repo="git@example.com/app1.git")
+        sol = _make_solution(tmp_path, projects=[proj])
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            with patch("localbox.commands.project.fetch_project", return_value="failed"):
+                result = _runner().invoke(cli, ["fetch", "projects"])
+        assert result.exit_code == 0
+        assert "Fetch Summary" in result.output
+
+
+class TestSwitchProjectsSummary:
+    def _sol(self, tmp_path):
+        p1 = Project("app1", repo="git@example.com/app1.git")
+        p2 = Project("app2", repo="git@example.com/app2.git")
+        return _make_solution(tmp_path, projects=[p1, p2])
+
+    def test_no_summary_for_single_success(self, tmp_path):
+        proj = Project("app1", repo="git@example.com/app1.git")
+        sol = _make_solution(tmp_path, projects=[proj])
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            with patch("localbox.commands.project.switch_project", return_value="switched"):
+                result = _runner().invoke(cli, ["switch", "projects"])
+        assert result.exit_code == 0
+        assert "Switch Summary" not in result.output
+
+    def test_summary_shown_for_multiple(self, tmp_path):
+        sol = self._sol(tmp_path)
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            with patch(
+                "localbox.commands.project.switch_project", side_effect=["switched", "switched"]
+            ):
+                result = _runner().invoke(cli, ["switch", "projects"])
+        assert result.exit_code == 0
+        assert "Switch Summary" in result.output
+
+    def test_summary_shown_on_single_failure(self, tmp_path):
+        proj = Project("app1", repo="git@example.com/app1.git")
+        sol = _make_solution(tmp_path, projects=[proj])
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            with patch("localbox.commands.project.switch_project", return_value="failed"):
+                result = _runner().invoke(cli, ["switch", "projects"])
+        assert result.exit_code == 0
+        assert "Switch Summary" in result.output
+
+
+class TestBuildImagesSummary:
+    def _svc(self, name: str) -> Service:
+        svc = Service(name=name, image=DockerImage(image="test:latest"))
+        svc._finalize_image_name()
+        return svc
+
+    def test_no_summary_for_single_success(self, tmp_path):
+        svc = self._svc("proxy")
+        sol = _make_solution(tmp_path, services=[svc])
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            with patch("localbox.commands.service.do_build", return_value=True):
+                result = _runner().invoke(cli, ["build", "services"])
+        assert result.exit_code == 0
+        assert "Image Build" not in result.output
+
+    def test_summary_shown_for_multiple(self, tmp_path):
+        svc1 = self._svc("proxy")
+        svc2 = self._svc("db")
+        sol = _make_solution(tmp_path, services=[svc1, svc2])
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            with patch("localbox.commands.service.do_build", side_effect=[True, True]):
+                result = _runner().invoke(cli, ["build", "services"])
+        assert result.exit_code == 0
+        assert "Image Build" in result.output
+
+    def test_summary_shown_on_failure(self, tmp_path):
+        svc1 = self._svc("proxy")
+        svc2 = self._svc("db")
+        sol = _make_solution(tmp_path, services=[svc1, svc2])
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            with patch("localbox.commands.service.do_build", side_effect=[True, False]):
+                result = _runner().invoke(cli, ["build", "services"])
+        assert result.exit_code == 0
+        assert "Image Build" in result.output
+        assert "Failed" in result.output
+
 
 # ---------------------------------------------------------------------------
 # localbox prune

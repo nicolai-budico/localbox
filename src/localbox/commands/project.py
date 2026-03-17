@@ -56,21 +56,25 @@ def clone_projects(
     verbose: bool = False,
 ) -> None:
     """Clone project repositories."""
+    results: list[tuple[str, str]] = []
     for project in projects:
         if not isinstance(project, Project):
             continue
 
-        clone_project(solution, project, verbose=verbose)
+        status = clone_project(solution, project, verbose=verbose)
+        results.append((project.name or "", status))
+    if len(results) > 1 or any(s == "failed" for _, s in results):
+        _print_summary(results, "Clone Summary")
 
 
-def clone_project(solution: Solution, project: Project, verbose: bool = False) -> None:
+def clone_project(solution: Solution, project: Project, verbose: bool = False) -> str:
     """Clone a single project repository."""
     target_dir = project.resolve_source_dir(solution.directories.projects)
 
     if target_dir.exists():
         logger.debug("clone skip {}: already exists at {}", project.name, target_dir)
         console.print(f"[yellow]Skip[/yellow] {project.name} (already exists)")
-        return
+        return "skipped"
 
     logger.info("clone {}", project.name)
     console.print(f"[blue]Cloning[/blue] {project.name}...")
@@ -78,7 +82,7 @@ def clone_project(solution: Solution, project: Project, verbose: bool = False) -
     if project.git is None:
         logger.error("clone {}: no git configuration", project.name)
         console.print(f"[red]Error:[/red] Project {project.name} has no git configuration")
-        return
+        return "failed"
 
     # Clone
     cmd = ["git", "clone", project.git.url, str(target_dir)]
@@ -93,7 +97,7 @@ def clone_project(solution: Solution, project: Project, verbose: bool = False) -
         console.print(f"[red]Failed[/red] to clone {project.name}")
         if not verbose and stderr:
             console.print(stderr)
-        return
+        return "failed"
 
     # Checkout branch
     branch = project.git.branch or solution.default_branch
@@ -114,6 +118,7 @@ def clone_project(solution: Solution, project: Project, verbose: bool = False) -
 
     logger.info("clone {} completed", project.name)
     console.print(f"[green]Cloned[/green] {project.name}")
+    return "cloned"
 
 
 def apply_patches(target_dir: Path, patches_dir: Path, verbose: bool = False) -> None:
@@ -142,21 +147,25 @@ def fetch_projects(
     verbose: bool = False,
 ) -> None:
     """Fetch (git pull) project repositories."""
+    results: list[tuple[str, str]] = []
     for project in projects:
         if not isinstance(project, Project):
             continue
 
-        fetch_project(solution, project, verbose=verbose)
+        status = fetch_project(solution, project, verbose=verbose)
+        results.append((project.name or "", status))
+    if len(results) > 1 or any(s == "failed" for _, s in results):
+        _print_summary(results, "Fetch Summary")
 
 
-def fetch_project(solution: Solution, project: Project, verbose: bool = False) -> None:
+def fetch_project(solution: Solution, project: Project, verbose: bool = False) -> str:
     """Fetch a single project repository."""
     target_dir = project.resolve_source_dir(solution.directories.projects)
 
     if not target_dir.exists():
         logger.debug("fetch skip {}: not cloned", project.name)
         console.print(f"[yellow]Skip[/yellow] {project.name} (not cloned)")
-        return
+        return "skipped"
 
     logger.info("fetch {}", project.name)
     console.print(f"[blue]Fetching[/blue] {project.name}...")
@@ -173,10 +182,11 @@ def fetch_project(solution: Solution, project: Project, verbose: bool = False) -
         console.print(f"[red]Failed[/red] to fetch {project.name}")
         if not verbose and stderr:
             console.print(stderr)
-        return
+        return "failed"
 
     logger.info("fetch {} completed", project.name)
     console.print(f"[green]Fetched[/green] {project.name}")
+    return "fetched"
 
 
 def switch_projects(
@@ -186,11 +196,15 @@ def switch_projects(
     verbose: bool = False,
 ) -> None:
     """Switch branches for projects."""
+    results: list[tuple[str, str]] = []
     for project in projects:
         if not isinstance(project, Project):
             continue
 
-        switch_project(solution, project, branch=branch, verbose=verbose)
+        status = switch_project(solution, project, branch=branch, verbose=verbose)
+        results.append((project.name or "", status))
+    if len(results) > 1 or any(s == "failed" for _, s in results):
+        _print_summary(results, "Switch Summary")
 
 
 def switch_project(
@@ -198,19 +212,19 @@ def switch_project(
     project: Project,
     branch: str | None = None,
     verbose: bool = False,
-) -> None:
+) -> str:
     """Switch branch for a single project."""
     target_dir = project.resolve_source_dir(solution.directories.projects)
 
     if not target_dir.exists():
         logger.debug("switch skip {}: not cloned", project.name)
         console.print(f"[yellow]Skip[/yellow] {project.name} (not cloned)")
-        return
+        return "skipped"
 
     if project.git is None:
         logger.error("switch {}: no git configuration", project.name)
         console.print(f"[red]Error:[/red] Project {project.name} has no git configuration")
-        return
+        return "failed"
 
     target_branch = branch or project.git.branch or solution.default_branch
     logger.info("switch {} → {}", project.name, target_branch)
@@ -228,10 +242,11 @@ def switch_project(
         console.print(f"[red]Failed[/red] to switch {project.name}")
         if not verbose and stderr:
             console.print(stderr)
-        return
+        return "failed"
 
     logger.info("switch {} completed", project.name)
     console.print(f"[green]Switched[/green] {project.name} to {target_branch}")
+    return "switched"
 
 
 def _last_log_line(log_path: Path | None) -> str | None:
@@ -244,6 +259,41 @@ def _last_log_line(log_path: Path | None) -> str | None:
         if stripped:
             return stripped[:80]
     return None
+
+
+def _print_summary(results: list[tuple[str, str]], title: str) -> None:
+    """Print a generic 2-column summary table (Name, Status)."""
+    table = Table(title=title)
+    table.add_column("Name", style="cyan")
+    table.add_column("Status", justify="center")
+
+    for name, status in results:
+        if status == "failed":
+            table.add_row(name, "[red]Failed[/red]")
+        elif status == "skipped":
+            table.add_row(name, "[yellow]Skipped[/yellow]")
+        else:
+            table.add_row(name, f"[green]{status.title()}[/green]")
+
+    console.print(table)
+
+    succeeded = sum(1 for _, s in results if s not in ("failed", "skipped"))
+    skipped = sum(1 for _, s in results if s == "skipped")
+    failed = sum(1 for _, s in results if s == "failed")
+
+    if failed:
+        parts = []
+        if succeeded:
+            parts.append(f"{succeeded} succeeded")
+        if skipped:
+            parts.append(f"{skipped} skipped")
+        parts.append(f"[red]{failed} failed[/red]")
+        console.print(f"[bold]{', '.join(parts)}[/bold]")
+    else:
+        parts = [f"{succeeded} succeeded"]
+        if skipped:
+            parts.append(f"{skipped} skipped")
+        console.print(f"[bold green]{', '.join(parts)}[/bold green]")
 
 
 def _print_build_summary(results: list[tuple[str, str, Path | None]]) -> None:
