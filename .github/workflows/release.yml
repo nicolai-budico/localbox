@@ -52,6 +52,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="v${{ steps.next.outputs.version }}"
-          git tag -a "$TAG" -m "Release $TAG"
-          git push origin "$TAG"
+          COMMIT_SHA=$(git rev-parse HEAD)
+
+          # Create annotated tag via GitHub API — GitHub signs it server-side, shows as "Verified"
+          TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/tags" \
+            --method POST \
+            --field tag="$TAG" \
+            --field message="Release $TAG" \
+            --field object="$COMMIT_SHA" \
+            --field type="commit" \
+            --jq '.sha')
+
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+            --method POST \
+            --field ref="refs/tags/$TAG" \
+            --field sha="$TAG_SHA"
+
           gh release create "$TAG" --generate-notes --title "$TAG"
