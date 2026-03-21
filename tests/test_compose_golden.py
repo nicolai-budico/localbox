@@ -224,6 +224,74 @@ class TestHealthCheckSerialisation:
         assert isinstance(SpringBootCheck(), HttpCheck)
 
 
+class TestComposeConfigExtra:
+    """Tests for ComposeConfig.extra passthrough field."""
+
+    def test_extra_fields_appear_in_output(self, tmp_path):
+        """extra dict keys are included in the service definition."""
+        from localbox.builders.compose import generate_service_definition
+
+        service = Service(
+            name="be:api",
+            compose=ComposeConfig(
+                extra={"logging": {"driver": "json-file", "options": {"max-size": "10m"}}}
+            ),
+        )
+        service._finalize_image_name()
+        sol = _make_solution(tmp_path, [service])
+
+        defn = generate_service_definition(sol, service)
+        assert defn["logging"] == {"driver": "json-file", "options": {"max-size": "10m"}}
+
+    def test_named_field_overrides_extra(self, tmp_path):
+        """Named fields take precedence over conflicting keys in extra."""
+        from localbox.builders.compose import generate_service_definition
+
+        service = Service(
+            name="be:api",
+            compose=ComposeConfig(extra={"restart": "always"}),
+        )
+        service._finalize_image_name()
+        sol = _make_solution(tmp_path, [service])
+
+        defn = generate_service_definition(sol, service)
+        assert defn["restart"] == "unless-stopped"
+
+    def test_extra_empty_by_default(self, tmp_path):
+        """A bare ComposeConfig() produces no unexpected extra keys."""
+        from localbox.builders.compose import generate_service_definition
+
+        service = Service(name="be:api", compose=ComposeConfig())
+        service._finalize_image_name()
+        sol = _make_solution(tmp_path, [service])
+
+        defn = generate_service_definition(sol, service)
+        known_keys = {"networks", "image", "restart"}
+        assert defn.keys() == known_keys
+
+    def test_extra_multiple_keys(self, tmp_path):
+        """Multiple keys in extra all appear in the service definition."""
+        from localbox.builders.compose import generate_service_definition
+
+        service = Service(
+            name="be:api",
+            compose=ComposeConfig(
+                extra={
+                    "logging": {"driver": "json-file"},
+                    "cap_add": ["NET_ADMIN"],
+                    "ulimits": {"nofile": {"soft": 65536, "hard": 65536}},
+                }
+            ),
+        )
+        service._finalize_image_name()
+        sol = _make_solution(tmp_path, [service])
+
+        defn = generate_service_definition(sol, service)
+        assert defn["logging"] == {"driver": "json-file"}
+        assert defn["cap_add"] == ["NET_ADMIN"]
+        assert defn["ulimits"] == {"nofile": {"soft": 65536, "hard": 65536}}
+
+
 class TestSpringBootServiceHealthcheck:
     """Integration tests for SpringBootService auto-generated healthcheck."""
 

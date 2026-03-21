@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from localbox.models.builder import Volume
 from localbox.models.docker_image import DockerImage
@@ -25,6 +26,7 @@ class ComposeConfig:
     environment: dict[str, str] = field(default_factory=dict)
     volumes: list[Volume] = field(default_factory=list)
     healthcheck: HealthCheck | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if isinstance(self.volumes, Volume):  # type: ignore[arg-type]

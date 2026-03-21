@@ -70,7 +70,7 @@ Defines how to build a project in Docker:
 
 ### Service (`models/service.py`)
 - `Service` - DockerImage, ComposeConfig
-- `ComposeConfig` - order, ports, depends_on, links, environment, volumes, healthcheck
+- `ComposeConfig` - order, ports, depends_on, links, environment, volumes, healthcheck, extra (arbitrary passthrough dict; named fields take precedence)
 - Auto-derives `group`/`local_name` from name containing `:`
 
 ## Solution Structure

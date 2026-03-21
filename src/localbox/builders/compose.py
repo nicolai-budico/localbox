@@ -256,6 +256,9 @@ def generate_service_definition(
         "networks": [solution.docker.network],
     }
 
+    # Passthrough extra fields (named fields below will override conflicts)
+    service_def.update(service.compose.extra)
+
     # Hostname
     if service.compose.hostname:
         service_def["hostname"] = service.compose.hostname
