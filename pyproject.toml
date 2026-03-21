@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "localbox"
-version = "0.1.14"
+version = "0.1.15"
 description = "Development environment orchestrator for Git repos, Docker builds, and service management"
 readme = "README.md"
 requires-python = ">=3.10"
