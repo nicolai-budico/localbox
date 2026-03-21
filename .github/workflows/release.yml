@@ -34,25 +34,36 @@ jobs:
           P[2]=$(( P[2] + 1 ))
           echo "version=${P[0]}.${P[1]}.${P[2]}" >> "$GITHUB_OUTPUT"
 
-      - name: Bump version, commit, and push to main
+      - name: Bump version, commit via GitHub API, and fast-forward v0.1
+        id: bump
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           NEXT="${{ steps.next.outputs.version }}"
           sed -i "s/^version = \".*\"/version = \"$NEXT\"/" pyproject.toml
-          git add pyproject.toml
-          git commit -m "chore: release v$NEXT"
-          git push origin main
 
-      - name: Fast-forward v0.1 to main
-        run: git push origin main:v0.1
+          # Commit via GitHub Contents API — GitHub signs the commit, shows as "Verified"
+          FILE_SHA=$(gh api "repos/$GITHUB_REPOSITORY/contents/pyproject.toml" --jq '.sha')
+          COMMIT_SHA=$(gh api "repos/$GITHUB_REPOSITORY/contents/pyproject.toml" \
+            --method PUT \
+            --field message="chore: release v$NEXT" \
+            --field "content=$(base64 -w0 pyproject.toml)" \
+            --field sha="$FILE_SHA" \
+            --field branch="main" \
+            --jq '.commit.sha')
+          echo "sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+
+          # Fast-forward v0.1 to the new commit
+          gh api "repos/$GITHUB_REPOSITORY/git/refs/heads/v0.1" \
+            --method PATCH \
+            --field sha="$COMMIT_SHA"
 
       - name: Tag and create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="v${{ steps.next.outputs.version }}"
-          COMMIT_SHA=$(git rev-parse HEAD)
+          COMMIT_SHA="${{ steps.bump.outputs.sha }}"
 
           # Create annotated tag via GitHub API — GitHub signs it server-side, shows as "Verified"
           TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/tags" \
