@@ -1,14 +1,12 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
-      - 'release-*'
+#  push:
+#    branches:
+#      - main
+#      - 'release-*'
   pull_request:
-    branches:
-      - main
-      - v0.1
+  workflow_dispatch:
 
 jobs:
   lint:
