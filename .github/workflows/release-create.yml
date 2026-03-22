@@ -1,0 +1,57 @@
+name: Release Create
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - v0.1
+
+jobs:
+  release:
+    name: Tag and create GitHub Release
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true && startsWith(github.head_ref, 'release-')
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from v0.1
+        id: version
+        run: |
+          VERSION=$(git show origin/v0.1:pyproject.toml | python3 -c "
+          import re, sys
+          m = re.search(r'^version\s*=\s*\"([^\"]+)\"', sys.stdin.read(), re.MULTILINE)
+          print(m.group(1))
+          ")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create annotated tag on merge commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          MERGE_SHA="${{ github.event.pull_request.merge_commit_sha }}"
+
+          TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/tags" \
+            --method POST \
+            --field tag="$TAG" \
+            --field message="Release $TAG" \
+            --field object="$MERGE_SHA" \
+            --field type="commit" \
+            --jq '.sha')
+
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+            --method POST \
+            --field ref="refs/tags/$TAG" \
+            --field sha="$TAG_SHA"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --generate-notes \
+            --title "${{ steps.version.outputs.tag }}"
