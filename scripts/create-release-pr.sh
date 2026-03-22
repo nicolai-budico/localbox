@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -euox pipefail
 
 # Creates a release branch from v0.1, merges main, bumps the patch version,
 # and opens a PR into v0.1. Run from anywhere inside the repo.
@@ -48,7 +48,16 @@ PR_NUMBER=$(basename "$PR_URL")
 echo "PR #$PR_NUMBER: $PR_URL"
 echo ""
 
-echo "Waiting for CI checks..."
+echo "Waiting for CI to start..."
+while true; do
+  CHECKS=$(gh pr checks "$PR_NUMBER" 2>/dev/null || true)
+  if [ -n "$CHECKS" ]; then
+    break
+  fi
+  sleep 2
+done
+
+echo "CI started. Waiting for checks to complete..."
 if gh pr checks "$PR_NUMBER" --watch --interval 2; then
   echo ""
   echo "CI passed. Review and merge: $PR_URL"
