@@ -2,12 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'release-*'
   pull_request:
     branches:
       - main
       - v0.1
-      - 'release-*'
 
 jobs:
   lint:
