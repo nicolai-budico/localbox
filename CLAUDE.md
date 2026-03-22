@@ -32,13 +32,15 @@ localbox/
 │   │   └── compose.py           # Docker Compose generation
 │   ├── utils/
 │   │   └── resolver.py          # Target resolution (colon-separated paths)
+├── scripts/                     # Developer scripts
+│   └── create-release-pr.sh     # Create release branch and PR
 ├── solutions/                   # Solution directories
 │   └── myapp/                   # Example solution
 │       ├── solution.py          # Solution config + all projects/services
 │       └── assets/              # Build scripts, patches, configs
 ├── tests/                       # Pytest tests
 ├── pyproject.toml               # Python project config
-└── localdev/                    # Development notes
+└── localdev/                    # Development notes (gitignored)
     └── release.md               # Release process
 ```
 
