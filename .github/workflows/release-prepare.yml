@@ -1,0 +1,58 @@
+name: Release Prepare
+
+on:
+  workflow_dispatch:
+
+jobs:
+  prepare:
+    name: Create release branch and PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read current version from v0.1
+        id: current
+        run: |
+          VERSION=$(git show origin/v0.1:pyproject.toml | python3 -c "
+          import re, sys
+          m = re.search(r'^version\s*=\s*\"([^\"]+)\"', sys.stdin.read(), re.MULTILINE)
+          print(m.group(1))
+          ")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Compute next patch version
+        id: next
+        run: |
+          IFS='.' read -ra P <<< "${{ steps.current.outputs.version }}"
+          P[2]=$(( P[2] + 1 ))
+          echo "version=${P[0]}.${P[1]}.${P[2]}" >> "$GITHUB_OUTPUT"
+
+      - name: Create release branch, merge main, bump version
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          NEXT="${{ steps.next.outputs.version }}"
+
+          git checkout -b "release-$NEXT" origin/v0.1
+          git merge --no-commit --no-ff origin/main
+          sed -i "s/^version = \".*\"/version = \"$NEXT\"/" pyproject.toml
+          git add pyproject.toml
+          git commit -m "Release $NEXT"
+          git push origin "release-$NEXT"
+
+      - name: Open PR into v0.1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEXT="${{ steps.next.outputs.version }}"
+          gh pr create \
+            --title "Release $NEXT" \
+            --body "Automated release PR for v$NEXT" \
+            --base v0.1 \
+            --head "release-$NEXT"
