@@ -7,7 +7,7 @@ on:
     branches:
       - main
       - v0.1
-      - 'release-**'
+      - 'release-*'
 
 jobs:
   lint:
