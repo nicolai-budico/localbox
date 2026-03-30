@@ -3,6 +3,7 @@
 - [Getting Started](getting-started.md) — step-by-step walkthrough using the example solution
 - [Concepts](concepts.md) — core mental model: Solution, Project, Builder, Service
 - [API Reference](api-reference.md) — every model, field, type, and default
+- [Developer Guide](developer-guide.md) — setup, checks, branching, and release process
 - [Roadmap](roadmap.md) — planned improvements and known bugs
 
 ## Cookbook
