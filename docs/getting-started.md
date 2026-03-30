@@ -45,6 +45,29 @@ To update to the latest patch:
 pip install --upgrade "git+https://github.com/nicolai-budico/localbox.git@v0.1"
 ```
 
+### Shell completion (optional)
+
+Localbox supports tab-completion for commands and colon-separated targets like `projects:libs:utils`.
+
+**Bash:**
+```bash
+localbox completion bash > ~/.local/share/bash-completion/completions/localbox
+source ~/.local/share/bash-completion/completions/localbox
+```
+
+**Zsh:**
+```bash
+localbox completion zsh > ~/.zfunc/_localbox
+# Add to ~/.zshrc if not already there:
+#   fpath=(~/.zfunc $fpath)
+#   autoload -Uz compinit && compinit
+```
+
+**Fish:**
+```bash
+localbox completion fish > ~/.config/fish/completions/localbox.fish
+```
+
 ---
 
 ## Step 2 — Navigate to the example solution
