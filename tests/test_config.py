@@ -169,6 +169,82 @@ class TestLoadSolution:
         assert db.compose.ports == ["5432:5432"]
         assert db.compose.order == 1
 
+    def test_service_explicit_group_in_root_module(self, tmp_path):
+        """User-provided group on Service should not be overridden by loader."""
+        (tmp_path / CONFIG_FILE).write_text("""\
+from localbox.models import SolutionConfig, Service, DockerImage, ComposeConfig
+
+config = SolutionConfig()
+
+primary = Service(
+    name="primary",
+    group="db",
+    image=DockerImage(image="postgres:16"),
+    compose=ComposeConfig(ports=["5432:5432"]),
+)
+""")
+        solution = load_solution(tmp_path)
+
+        assert "db:primary" in solution.services
+        svc = solution.services["db:primary"]
+        assert svc.group == "db"
+        assert svc.local_name == "primary"
+
+    def test_project_explicit_group_in_root_module(self, tmp_path):
+        """User-provided group on Project should not be overridden by loader."""
+        (tmp_path / CONFIG_FILE).write_text("""\
+from localbox.models import SolutionConfig, Project
+
+config = SolutionConfig()
+
+utils = Project(
+    "utils",
+    group="libs",
+    repo="git@github.com:example/utils.git",
+)
+""")
+        solution = load_solution(tmp_path)
+
+        assert "libs:utils" in solution.projects
+        proj = solution.projects["libs:utils"]
+        assert proj.group == "libs"
+        assert proj.local_name == "utils"
+
+    def test_service_no_group_in_subpackage_uses_module_group(self, tmp_path):
+        """Service without explicit group in sub-package gets module-derived group."""
+        import sys
+
+        (tmp_path / CONFIG_FILE).write_text("""\
+from localbox.models import SolutionConfig
+import services.infra
+
+config = SolutionConfig()
+""")
+        pkg_dir = tmp_path / "services" / "infra"
+        pkg_dir.mkdir(parents=True)
+        (tmp_path / "services" / "__init__.py").write_text("")
+        (pkg_dir / "__init__.py").write_text("""\
+from localbox.models import Service, DockerImage, ComposeConfig
+
+redis = Service(
+    name="redis",
+    image=DockerImage(image="redis:7"),
+    compose=ComposeConfig(ports=["6379:6379"]),
+)
+""")
+        try:
+            solution = load_solution(tmp_path)
+
+            assert "infra:redis" in solution.services
+            svc = solution.services["infra:redis"]
+            assert svc.group == "infra"
+            assert svc.local_name == "redis"
+        finally:
+            # Clean up sub-package modules to avoid leaking into other tests
+            for key in list(sys.modules):
+                if key.startswith(("services.", "services")):
+                    del sys.modules[key]
+
     def test_custom_config(self, tmp_path):
         """Should apply custom SolutionConfig values."""
         (tmp_path / CONFIG_FILE).write_text("""\
