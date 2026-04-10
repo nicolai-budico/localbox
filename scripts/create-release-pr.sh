@@ -31,6 +31,13 @@ if git ls-remote --exit-code origin "refs/heads/$BRANCH" > /dev/null 2>&1; then
   exit 1
 fi
 
+# Also guard against a stale local branch left behind by a previous aborted run.
+if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
+  echo "Error: local branch '$BRANCH' already exists (likely from a previous aborted run)." >&2
+  echo "       Delete it with: git branch -D $BRANCH" >&2
+  exit 1
+fi
+
 git checkout -b "$BRANCH" origin/v0.1
 git merge --no-commit --no-ff origin/main
 sed -i "s/^version = \".*\"/version = \"$NEXT\"/" pyproject.toml
