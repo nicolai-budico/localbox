@@ -1,6 +1,7 @@
 """Docker Compose file generator."""
 
 import dataclasses
+import re
 from collections.abc import KeysView
 from pathlib import Path
 from typing import Any
@@ -10,9 +11,11 @@ from loguru import logger
 from rich.console import Console
 
 from localbox.config import Solution
-from localbox.models.base_env import BaseEnv, EnvField
+from localbox.models.base_env import BaseEnv, EnvField, EnvRef
 from localbox.models.builder import BindVolume, CacheVolume, NamedVolume, Volume
 from localbox.models.service import Service
+
+_ENV_REF_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 console = Console()
 
@@ -35,6 +38,16 @@ class _NoAliasDumper(yaml.SafeDumper):
 _NoAliasDumper.add_representer(
     _QuotedStr,
     lambda dumper, data: dumper.represent_scalar("tag:yaml.org,2002:str", data, style='"'),
+)
+
+# EnvRef is a str subclass carrying side-channel raw-value data, but PyYAML
+# looks up representers by exact type (not inheritance), so without this line
+# any EnvRef that reaches yaml.dump (ports, hostname, extras, bare values
+# passed directly rather than via f-string) raises RepresenterError. Serialize
+# it as a plain YAML string — its textual value is already "${NAME}".
+_NoAliasDumper.add_representer(
+    EnvRef,
+    lambda dumper, data: dumper.represent_scalar("tag:yaml.org,2002:str", str(data)),
 )
 
 
@@ -91,7 +104,10 @@ def _ensure_gitignored(solution_root: Path, entries: list[str]) -> None:
 def _collect_all_solution_env_vars(solution: Solution) -> dict[str, str]:
     """Collect all env vars defined in SolutionConfig.env.
 
-    For BaseEnv instances, all fields are collected; unset required fields raise ValueError.
+    For BaseEnv instances, all fields that were set are collected via
+    ``raw_values()``. Fields still holding the ``EnvField`` sentinel are
+    silently skipped here — the walker raises when such a field is actually
+    referenced in a compose value.
     For plain dicts, all non-None values are collected.
     """
     env = solution.config.env if solution.config else None
@@ -101,20 +117,69 @@ def _collect_all_solution_env_vars(solution: Solution) -> dict[str, str]:
     result: dict[str, str] = {}
 
     if isinstance(env, BaseEnv):
-        for f in dataclasses.fields(env):
-            value = getattr(env, f.name)
-            if isinstance(value, EnvField):
-                raise ValueError(
-                    f"Env.{f.name} is required but not set. "
-                    f"Set it in solution.py or solution-override.py."
-                )
-            result[f.name] = value
+        # raw_values() only contains fields that were actually set. Unset
+        # required fields are caught by the reference walker when/if they
+        # are referenced in a compose field.
+        result.update(env.raw_values())
     elif isinstance(env, dict):
         for k, v in env.items():
             if v is not None:
                 result[k] = v
 
     return result
+
+
+def _baseenv_field_names(env_instance: Any) -> set[str]:
+    """Return the set of field names declared on a BaseEnv instance."""
+    if not isinstance(env_instance, BaseEnv):
+        return set()
+    return {f.name for f in dataclasses.fields(env_instance)}
+
+
+def _walk_env_refs(
+    value: Any,
+    env_instance: Any,
+    collector: dict[str, str],
+) -> None:
+    """Walk a compose structure and collect BaseEnv references found in strings.
+
+    For every string value that contains one or more ``${NAME}`` tokens, each
+    captured ``NAME`` that is a declared field of ``env_instance`` is looked
+    up via ``env_instance.raw_value(NAME)`` and added to ``collector``.
+
+    Raises ``ValueError`` if a referenced field exists on the BaseEnv subclass
+    but was never set (i.e. still holds the ``EnvField`` sentinel).
+
+    References whose name does not match any field on ``env_instance`` are
+    left untouched — they are treated as Docker Compose's own variable
+    expansion and flow through verbatim.
+    """
+    if isinstance(value, dict):
+        for v in value.values():
+            _walk_env_refs(v, env_instance, collector)
+        return
+    if isinstance(value, (list, tuple)):
+        for v in value:
+            _walk_env_refs(v, env_instance, collector)
+        return
+    if not isinstance(value, str):
+        return
+
+    field_names = _baseenv_field_names(env_instance)
+    if not field_names:
+        return
+
+    for match in _ENV_REF_RE.finditer(value):
+        name = match.group(1)
+        if name not in field_names:
+            continue
+        try:
+            collector[name] = env_instance.raw_value(name)
+        except KeyError as exc:
+            raise ValueError(
+                f"Env.{name} is required but not set. "
+                f"Set it in solution.py or solution-override.py."
+            ) from exc
 
 
 def generate_compose_file(solution: Solution) -> Path:
@@ -292,34 +357,19 @@ def generate_service_definition(
     if service.compose.ports:
         service_def["ports"] = service.compose.ports
 
-    # Environment
+    # Environment — values flow through the generic reference walker at the
+    # end of this function. We reject class-level EnvField sentinels here
+    # because users must reference env fields via instance access.
     if service.compose.environment:
-        env_instance = solution.config.env if solution.config else None
-        resolved = {}
+        resolved: dict[str, Any] = {}
         for k, v in service.compose.environment.items():
             if isinstance(v, EnvField):
-                if not isinstance(env_instance, BaseEnv):
-                    raise ValueError(
-                        f"Service environment '{k}' uses Env.FIELD reference "
-                        f"but solution env is not a BaseEnv instance"
-                    )
-                field_name = next(
-                    (f.name for f in dataclasses.fields(env_instance) if f.default is v),
-                    None,
+                raise TypeError(
+                    f"Service environment '{k}' received a class-level EnvField "
+                    f"sentinel. Use instance access on the solution's env "
+                    f"(e.g. config.env.{k}) instead of Env.{k}."
                 )
-                if field_name is None:
-                    raise ValueError(f"Environment key '{k}': FieldInfo not found in Env")
-                actual = getattr(env_instance, field_name)
-                if isinstance(actual, EnvField):
-                    raise ValueError(
-                        f"Environment key '{k}' (Env.{field_name}) is required but not set. "
-                        f"Set it in solution.py or solution-override.py."
-                    )
-                if env_collector is not None:
-                    env_collector[field_name] = actual
-                resolved[k] = _QuotedStr(f"${{{field_name}}}")
-            else:
-                resolved[k] = _QuotedStr(v)
+            resolved[k] = _QuotedStr(v)
         service_def["environment"] = resolved
 
     # Volumes
@@ -345,5 +395,15 @@ def generate_service_definition(
 
     # Restart policy
     service_def["restart"] = "unless-stopped"
+
+    # Walk the finished service definition for BaseEnv references so that the
+    # .env file is populated for every field referenced in any compose value
+    # (ports, environment, volumes, extras, healthcheck, links, ...). This
+    # also raises ValueError when a referenced field is declared on the
+    # BaseEnv subclass but was never set.
+    env_instance = solution.config.env if solution.config else None
+    if isinstance(env_instance, BaseEnv):
+        sink = env_collector if env_collector is not None else {}
+        _walk_env_refs(service_def, env_instance, sink)
 
     return service_def

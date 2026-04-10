@@ -111,10 +111,20 @@ import solution
 solution.config.env.db_pass = "my-local-password"
 ```
 
-This file is gitignored — it stays on your machine only.
+This file is gitignored — it stays on your machine only. The assignment
+updates the typed env so that the generated `.env` file (also gitignored)
+picks up the new value, while `docker-compose.yml` keeps referencing it as
+`${db_pass}`.
 
 > **Why is this a required field?**
 > `db_pass` is declared as `env_field(is_secret=True)` with no default value. Localbox enforces that required fields are set before generating the Compose file. This prevents accidentally running with empty credentials.
+
+> **How env values flow into compose**
+> Instance access on `config.env.<field>` returns a reference whose string
+> form is `${<field>}`. Writing
+> `ports=[f"{config.env.db_host}:5432"]` in `solution.py` therefore produces
+> `${db_host}:5432` in the generated `docker-compose.yml`, and the raw value
+> lands once in `.env` as `db_host="localhost"`.
 
 ---
 

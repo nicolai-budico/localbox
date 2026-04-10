@@ -1,6 +1,6 @@
 """Data models for localbox."""
 
-from localbox.models.base_env import BaseEnv, env_field
+from localbox.models.base_env import BaseEnv, EnvRef, env_field
 from localbox.models.builder import (
     BindVolume,
     Builder,
@@ -91,5 +91,6 @@ __all__ = [
     "SolutionConfig",
     # Base env
     "BaseEnv",
+    "EnvRef",
     "env_field",
 ]
