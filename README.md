@@ -288,6 +288,11 @@ Generate a template: `localbox init-override`
 
 ### Referencing env values in services
 
+Reference env values through **instance access** on `config.env`. Every attribute
+is an `EnvRef` — a `str` subclass whose string form is `${<field>}` — so any
+f-string, concatenation, or direct dict value produces a Docker Compose
+variable reference. The raw value is written once to `.env`.
+
 ```python
 from localbox.models import Service, DockerImage, ComposeConfig
 
@@ -295,18 +300,19 @@ db = Service(
     name="db",
     image=DockerImage(image="postgres:16"),
     compose=ComposeConfig(
+        ports=[f"{config.env.db_host}:5432"],       # → "${db_host}:5432"
         environment={
-            "POSTGRES_PASSWORD": Env.db_pass,  # → ${db_pass} in compose; value in .env
-            "POSTGRES_DB": "myapp",            # plain string — written as literal in compose
-        }
+            "POSTGRES_PASSWORD": config.env.db_pass,  # → "${db_pass}"
+            "POSTGRES_DB":       "myapp",             # plain literal
+        },
     ),
 )
 ```
 
 `localbox compose generate` writes two files:
 
-- **`docker-compose.yml`** — `SolutionConfig.env` field references become `${field_name}` variables; plain string values are written as literals.
-- **`.env`** — one `field_name='value'` line per referenced `SolutionConfig.env` field, keyed by the Python attribute name. Docker Compose reads this file automatically when starting services.
+- **`docker-compose.yml`** — every field reference appears as `${field_name}`; plain string values are written as literals.
+- **`.env`** — one `field_name="value"` line per field on the `BaseEnv` instance, plus any other references the walker finds. Docker Compose reads this file automatically when starting services.
 
 One `SolutionConfig.env` field can be mapped to multiple compose environment keys — only one `.env` entry is written per field. Both files are automatically added to `.gitignore` and regenerated on every run.
 
