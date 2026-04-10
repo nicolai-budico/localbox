@@ -79,10 +79,10 @@ config = SolutionConfig[Env](
 
 ---
 
-## BaseEnv / env_field
+## BaseEnv / env_field / EnvRef
 
 ```python
-from localbox.models import BaseEnv, env_field
+from localbox.models import BaseEnv, EnvRef, env_field
 ```
 
 Typed environment variable base class.
@@ -90,7 +90,7 @@ Typed environment variable base class.
 **Rules:**
 - Subclass must be decorated with `@dataclasses.dataclass`
 - Every annotated field must use `env_field()` as its default — plain string defaults are rejected at class definition time
-- Fields with no value assigned in the `SolutionConfig` constructor are _required_ — `compose generate` raises `ValueError` if unset
+- Fields with no value assigned in the `SolutionConfig` constructor are _required_ — `compose generate` raises `ValueError` if the field is referenced by any service
 - Set required values in `solution-override.py`: `solution.config.env.db_pass = "value"`
 
 ```python
@@ -113,11 +113,60 @@ class Env(BaseEnv):
     log_level: str = env_field()                # required
 ```
 
-**Referencing values in services:**
+**Referencing values in services (instance access):**
+
+Every attribute on a `BaseEnv` instance is an `EnvRef` — a `str` subclass whose
+string form is `${<field>}`. Any f-string, concatenation, or direct use in a
+`ComposeConfig` field produces a Docker Compose variable reference. The raw
+value lands in the generated `.env` file and is looked up at `docker compose up`
+time.
 
 ```python
-# Class attribute (Env.db_pass) is a sentinel — resolved to actual value at compose generate time
-ComposeConfig(environment={"POSTGRES_PASSWORD": Env.db_pass})
+ComposeConfig(
+    ports=[f"{config.env.db_host}:5432"],           # → "${db_host}:5432"
+    environment={
+        "POSTGRES_HOST":     config.env.db_host,    # → "${db_host}"
+        "POSTGRES_PASSWORD": config.env.db_pass,    # → "${db_pass}"
+    },
+)
+```
+
+```yaml
+# Generated docker-compose.yml
+services:
+  db:
+    ports:
+      - ${db_host}:5432
+    environment:
+      POSTGRES_HOST:     "${db_host}"
+      POSTGRES_PASSWORD: "${db_pass}"
+```
+
+```env
+# Generated .env (gitignored)
+db_host="localhost"
+db_pass="s3cr3t"
+```
+
+**Raw-value accessors** (for code paths that need the literal, e.g. a
+`Builder.environment` value passed to `docker run -e`):
+
+```python
+env.raw_value("db_host")   # → "localhost"    (KeyError if unset/unknown)
+env.raw_values()           # → {"db_host": "localhost", "db_pass": "s3cr3t"}
+```
+
+Direct instance assignment (`solution.config.env.db_pass = "x"`) from
+`solution-override.py` is supported and updates both the `EnvRef` attribute
+and the underlying raw-value map.
+
+**EnvRef** exposes `.name` (the field name) and `.raw` (the raw value):
+
+```python
+ref = config.env.db_host                  # EnvRef
+str(ref)     # "${db_host}"
+ref.name     # "db_host"
+ref.raw      # "localhost"
 ```
 
 ---
@@ -618,7 +667,7 @@ class ComposeConfig:
 | `ports` | `list[str]` | `[]` | Port mappings in Docker format: `"8080:8080"`, `"127.0.0.1:5432:5432"`. |
 | `depends_on` | `list[Service]` | `[]` | Services that must start before this one. Pass `Service` objects — names are resolved automatically. |
 | `links` | `list[str]` | `[]` | Docker links in `"service:alias"` format (legacy; prefer `depends_on` + hostname). |
-| `environment` | `dict[str, str]` | `{}` | Environment variables. Values may be strings or `Env.field` sentinels (resolved at compose generate time). |
+| `environment` | `dict[str, str]` | `{}` | Environment variables. Values may be plain strings or `config.env.<field>` (instance access on a `BaseEnv` subclass). The latter becomes `${<field>}` in the generated compose file and lands in `.env`. Class-level `Env.<field>` sentinels are rejected — use instance access. |
 | `volumes` | `Volume \| list[Volume]` | `[]` | Volume mounts. A single `Volume` is normalized to a list. |
 | `healthcheck` | `HealthCheck \| None` | `None` | Docker healthcheck. Use typed subclasses (`PgCheck()`, `SpringBootCheck()`). |
 

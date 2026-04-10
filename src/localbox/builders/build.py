@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 from rich.console import Console
 
+from localbox.models.base_env import EnvRef
 from localbox.models.builder import (
     BindVolume,
     Builder,
@@ -29,6 +30,21 @@ if TYPE_CHECKING:
     from localbox.config import Solution
 
 console = Console()
+
+
+def _resolve_env_value(value: str) -> str:
+    """Resolve a builder environment value to its raw form.
+
+    ``EnvRef`` instances are a ``str`` subclass whose string form is
+    ``${NAME}`` — that makes sense for ``docker-compose.yml`` (which *does*
+    perform variable substitution via the generated ``.env`` file) but is
+    wrong for ``docker run -e KEY=VALUE``, where no substitution happens.
+    The build runner therefore resolves ``EnvRef`` values to their raw value
+    before handing them to ``docker run``.
+    """
+    if isinstance(value, EnvRef):
+        return value.raw
+    return value
 
 
 def _kill_container(container_name: str) -> None:
@@ -165,9 +181,10 @@ def run_builder(
     for vol in builder.volumes:
         docker_cmd.extend(_build_volume_args(vol, solution))
 
-    # Environment variables
+    # Environment variables (resolve EnvRef → raw value; docker run does not
+    # perform ${NAME} substitution on -e args)
     for key, value in builder.environment.items():
-        docker_cmd.extend(["-e", f"{key}={value}"])
+        docker_cmd.extend(["-e", f"{key}={_resolve_env_value(value)}"])
 
     # Script mount
     if builder.build_script:
@@ -326,7 +343,7 @@ def run_builder_clean(
         docker_cmd.extend(_build_volume_args(vol, solution))
 
     for key, value in builder.environment.items():
-        docker_cmd.extend(["-e", f"{key}={value}"])
+        docker_cmd.extend(["-e", f"{key}={_resolve_env_value(value)}"])
 
     if builder.clean_script:
         script_path = project.get_script_path(builder.clean_script, solution.root)

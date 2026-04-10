@@ -114,7 +114,11 @@ mvn.volumes.append(
         readonly=True,
     )
 )
-# Pass credentials from env into the build container
+# Pass credentials from env into the build container.
+# Instance access returns an EnvRef (a str whose value is "${nexus_user}"),
+# but the build runner unwraps EnvRef values back to their raw strings before
+# passing them to `docker run -e`, because Docker does not perform ${...}
+# substitution on `-e KEY=VALUE` arguments the way docker-compose does.
 mvn.environment["NEXUS_USER"] = config.env.nexus_user
 mvn.environment["NEXUS_PASS"] = config.env.nexus_pass   # resolved at runtime
 

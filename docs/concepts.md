@@ -237,7 +237,7 @@ db = Service(
         environment={
             "POSTGRES_DB":       "myapp",
             "POSTGRES_USER":     "myapp",
-            "POSTGRES_PASSWORD": Env.db_pass,    # resolved from BaseEnv
+            "POSTGRES_PASSWORD": config.env.db_pass,  # ${db_pass} reference
         },
         volumes=named_volume("db_data", "/var/lib/postgresql/data"),
         healthcheck=PgCheck(),                   # docker healthcheck
@@ -350,18 +350,46 @@ config = SolutionConfig[Env](
 )
 ```
 
-Reference env values in service environment dicts using the class-level attribute:
+Reference env values through **instance access** on `config.env`. Every attribute
+returns an `EnvRef` — a `str` subclass whose string form is `${FIELD}`. Any
+f-string or concatenation produces a Docker Compose variable reference, and the
+real value is written once to the `.env` file alongside `docker-compose.yml`.
 
 ```python
 ComposeConfig(
+    ports=[f"{config.env.db_host}:5432"],       # → "${db_host}:5432"
     environment={
-        "POSTGRES_HOST":     Env.db_host,    # resolved at compose generate time
-        "POSTGRES_PASSWORD": Env.db_pass,    # resolved, value masked in logs
-    }
+        "POSTGRES_HOST":     config.env.db_host,    # → "${db_host}"
+        "POSTGRES_PASSWORD": config.env.db_pass,    # → "${db_pass}"
+    },
 )
 ```
 
-The `Env.field` syntax works because `env_field()` returns a sentinel object stored as the class-level attribute. Localbox matches it to the actual instance value when generating the Compose file.
+After `localbox compose generate`, the resulting files look like:
+
+```yaml
+# docker-compose.yml
+services:
+  db:
+    ports:
+      - ${db_host}:5432
+    environment:
+      POSTGRES_HOST:     "${db_host}"
+      POSTGRES_PASSWORD: "${db_pass}"
+```
+
+```env
+# .env  (generated, gitignored)
+db_host="localhost"
+db_pass="s3cr3t"
+```
+
+This means the committed `docker-compose.yml` stays free of secrets and
+machine-specific values; per-environment overrides happen by editing `.env`.
+
+If you need the raw value in Python (rare — mostly for scripting), call
+`config.env.raw_value("db_host")`. Referencing a required field that was never
+set raises `ValueError` at `compose generate` time, naming the field.
 
 ---
 
