@@ -61,9 +61,9 @@ db = Service(
         order=1,
         ports=["5432:5432"],
         environment={
-            "POSTGRES_DB":       Env.db_name,
-            "POSTGRES_USER":     Env.db_user,
-            "POSTGRES_PASSWORD": Env.db_pass,
+            "POSTGRES_DB":       config.env.db_name,
+            "POSTGRES_USER":     config.env.db_user,
+            "POSTGRES_PASSWORD": config.env.db_pass,
         },
         volumes=named_volume("db_data", "/var/lib/postgresql/data"),
         healthcheck=PgCheck(),
@@ -79,9 +79,9 @@ api = SpringBootService(
         ports=["8080:8080"],
         depends_on=[db],
         environment={
-            "SPRING_DATASOURCE_URL":      f"jdbc:postgresql://db:5432/{Env.db_name}",
-            "SPRING_DATASOURCE_USERNAME": Env.db_user,
-            "SPRING_DATASOURCE_PASSWORD": Env.db_pass,
+            "SPRING_DATASOURCE_URL":      f"jdbc:postgresql://db:5432/{config.env.db_name}",
+            "SPRING_DATASOURCE_USERNAME": config.env.db_user,
+            "SPRING_DATASOURCE_PASSWORD": config.env.db_pass,
         },
     ),
 )
@@ -199,12 +199,12 @@ db = Service(
     compose=ComposeConfig(
         order=1,
         environment={
-            "POSTGRES_DB":       Env.db_name,
-            "POSTGRES_USER":     Env.db_user,
-            "POSTGRES_PASSWORD": Env.db_pass,
+            "POSTGRES_DB":       config.env.db_name,
+            "POSTGRES_USER":     config.env.db_user,
+            "POSTGRES_PASSWORD": config.env.db_pass,
         },
         volumes=named_volume("db_data", "/var/lib/postgresql/data"),
-        healthcheck=PgCheck(user=Env.db_user),  # match the DB user
+        healthcheck=PgCheck(user=config.env.db_user),  # match the DB user
     ),
 )
 ```
@@ -220,7 +220,7 @@ db_primary = Service(
     compose=ComposeConfig(
         order=1,
         ports=["5432:5432"],
-        environment={"POSTGRES_DB": "primary", "POSTGRES_PASSWORD": Env.db_pass},
+        environment={"POSTGRES_DB": "primary", "POSTGRES_PASSWORD": config.env.db_pass},
         volumes=named_volume("db_primary_data", "/var/lib/postgresql/data"),
         healthcheck=PgCheck(),
     ),
@@ -232,7 +232,7 @@ db_reporting = Service(
     compose=ComposeConfig(
         order=2,
         ports=["5433:5432"],
-        environment={"POSTGRES_DB": "reporting", "POSTGRES_PASSWORD": Env.db_pass},
+        environment={"POSTGRES_DB": "reporting", "POSTGRES_PASSWORD": config.env.db_pass},
         volumes=named_volume("db_reporting_data", "/var/lib/postgresql/data"),
         healthcheck=PgCheck(),
     ),

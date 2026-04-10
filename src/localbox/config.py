@@ -294,9 +294,10 @@ def _collect_objects(
             else:
                 # Partial name provided - prefix with module group
                 local_name = obj.name
-                if group:
-                    obj.name = f"{group}:{local_name}"
-                obj.group = group
+                effective_group = obj.group or group
+                if effective_group:
+                    obj.name = f"{effective_group}:{local_name}"
+                obj.group = effective_group
 
             obj.local_name = local_name
             projects[obj.name] = obj
@@ -324,9 +325,10 @@ def _collect_objects(
             else:
                 # Partial name provided - prefix with module group
                 local_name = obj.name
-                if group:
-                    obj.name = f"{group}:{local_name}"
-                obj.group = group
+                effective_group = obj.group or group
+                if effective_group:
+                    obj.name = f"{effective_group}:{local_name}"
+                obj.group = effective_group
 
             obj.local_name = local_name
 
