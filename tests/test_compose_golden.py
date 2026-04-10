@@ -243,8 +243,8 @@ class TestComposeConfigExtra:
         defn = generate_service_definition(sol, service)
         assert defn["logging"] == {"driver": "json-file", "options": {"max-size": "10m"}}
 
-    def test_named_field_overrides_extra(self, tmp_path):
-        """Named fields take precedence over conflicting keys in extra."""
+    def test_extra_restart_passes_through(self, tmp_path):
+        """extra values pass through when no typed field shadows them."""
         from localbox.builders.compose import generate_service_definition
 
         service = Service(
@@ -255,7 +255,7 @@ class TestComposeConfigExtra:
         sol = _make_solution(tmp_path, [service])
 
         defn = generate_service_definition(sol, service)
-        assert defn["restart"] == "unless-stopped"
+        assert defn["restart"] == "always"
 
     def test_extra_empty_by_default(self, tmp_path):
         """A bare ComposeConfig() produces no unexpected extra keys."""
@@ -266,7 +266,7 @@ class TestComposeConfigExtra:
         sol = _make_solution(tmp_path, [service])
 
         defn = generate_service_definition(sol, service)
-        known_keys = {"networks", "image", "restart"}
+        known_keys = {"networks", "image"}
         assert defn.keys() == known_keys
 
     def test_extra_multiple_keys(self, tmp_path):
@@ -290,6 +290,37 @@ class TestComposeConfigExtra:
         assert defn["logging"] == {"driver": "json-file"}
         assert defn["cap_add"] == ["NET_ADMIN"]
         assert defn["ulimits"] == {"nofile": {"soft": 65536, "hard": 65536}}
+
+
+class TestComposeGeneration:
+    """Generator-level rules: no default restart, quoted port strings."""
+
+    def test_no_default_restart_policy(self, tmp_path):
+        """A bare ComposeConfig() does not produce a `restart` key."""
+        from localbox.builders.compose import generate_service_definition
+
+        service = Service(name="be:api", compose=ComposeConfig())
+        service._finalize_image_name()
+        sol = _make_solution(tmp_path, [service])
+
+        defn = generate_service_definition(sol, service)
+        assert "restart" not in defn
+
+    def test_ports_are_quoted(self, tmp_path):
+        """Generated compose file double-quotes every ports: entry."""
+        service = Service(
+            name="proxy",
+            image=DockerImage(image="nginx:alpine"),
+            compose=ComposeConfig(ports=["0.0.0.0:80:80", "0.0.0.0:9001:9001"]),
+        )
+        service._finalize_image_name()
+        sol = _make_solution(tmp_path, [service])
+
+        generate_compose_file(sol)
+        result = (tmp_path / "docker-compose.yml").read_text()
+
+        assert '- "0.0.0.0:80:80"' in result
+        assert '- "0.0.0.0:9001:9001"' in result
 
 
 class TestSpringBootServiceHealthcheck:
