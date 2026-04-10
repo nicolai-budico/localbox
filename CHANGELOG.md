@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `compose generate` no longer writes a default `restart: unless-stopped`
+  on every service. Services now inherit Docker Compose's own default (no
+  restart). Users who want a restart policy can opt in per-service via
+  `ComposeConfig(extra={"restart": "unless-stopped"})`.
+- `compose generate` now double-quotes every entry in a service's `ports:`
+  list in the generated `docker-compose.yml`. This silences Docker Compose's
+  `unquoted port mapping` warning for `host_ip:host:container` strings like
+  `0.0.0.0:80:80`.
 - **BREAKING** — Instance access on a `BaseEnv` subclass (e.g.
   `config.env.db_host`) now returns an `EnvRef` — a `str` subclass whose
   string form is `"${db_host}"`. F-strings and concatenation therefore

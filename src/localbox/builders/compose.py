@@ -353,9 +353,11 @@ def generate_service_definition(
         image_name = (service.name or "").replace(":", "/")
         service_def["image"] = solution.service_image_tag(image_name)
 
-    # Ports
+    # Ports — wrap in _QuotedStr so PyYAML double-quotes each entry, which
+    # silences Docker Compose's "unquoted port mapping" warning for strings
+    # like "0.0.0.0:80:80".
     if service.compose.ports:
-        service_def["ports"] = service.compose.ports
+        service_def["ports"] = [_QuotedStr(p) for p in service.compose.ports]
 
     # Environment — values flow through the generic reference walker at the
     # end of this function. We reject class-level EnvField sentinels here
@@ -392,9 +394,6 @@ def generate_service_definition(
     # Healthcheck
     if service.compose.healthcheck:
         service_def["healthcheck"] = service.compose.healthcheck.to_compose_dict()
-
-    # Restart policy
-    service_def["restart"] = "unless-stopped"
 
     # Walk the finished service definition for BaseEnv references so that the
     # .env file is populated for every field referenced in any compose value
