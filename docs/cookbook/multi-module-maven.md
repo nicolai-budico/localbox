@@ -114,13 +114,13 @@ This works because all Maven builds share the same `.build/maven/` cache volume.
 
 ```bash
 # Build everything in the correct order
-localbox build projects
+localbox projects build
 
 # Build only the libs group
-localbox build projects:libs
+localbox projects build libs
 
 # Build only a specific project (its deps are NOT auto-built)
-localbox build projects:libs:commons
+localbox projects build libs:commons
 ```
 
 > **Warning:** If you build a specific project without its dependencies, Maven will fail if the dependency JARs aren't already in the cache.
@@ -184,10 +184,10 @@ Localbox uses the appropriate Maven Docker image per project. All artifacts land
 
 ## Listing the resolved build order
 
-After defining projects, you can inspect what `localbox build projects` would do:
+After defining projects, you can inspect what `localbox projects build` would do:
 
 ```bash
-localbox list projects
+localbox projects list
 ```
 
 Projects are displayed in group/tree form. The actual build order is computed from the dependency graph at build time and printed as builds proceed.

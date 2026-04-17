@@ -78,17 +78,9 @@ docs/
 
 The condition `":" in link.split(":")[0]` is always `False` — the first element after `split(":")` never contains a colon. Service names with `:` in the links key are not normalized to `-`. Latent bug; affects solutions using `ComposeConfig(links=...)`.
 
-**`cli.py` — `build` command with mixed-type targets**
-
-Passing targets that span both types (`localbox build services:db projects:api`) processes only the first prefix. The second type reaches the wrong resolver and raises `TargetError`. Should either support mixed targets or emit a clear, actionable error message.
-
 **`builders/docker.py` — `_build_dockerfile_service` no output streaming**
 
 Uses `subprocess.check_call` without streaming. Docker build output from library services (`TomcatService`, `SpringBootService`) is invisible until the process exits; failures surface as `CalledProcessError` with no user-readable context. Should mirror the streaming approach used in `builders/build.py`.
-
-**`resolver.py` — `parse_target()` is dead code**
-
-`parse_target()` is implemented but never called anywhere in the codebase. Remove or wire it up.
 
 ### DX Improvements
 
@@ -96,16 +88,16 @@ Uses `subprocess.check_call` without streaming. Docker build output from library
 
 Validate solution configuration without side effects (no cloning, no building). Currently misconfigurations only surface during `build` or `compose generate`. Useful for CI sanity checks and onboarding.
 
-**`localbox info <target>`**
+**`localbox <domain> info <target>`**
 
 Show detailed information about a single project or service:
 
 ```bash
-localbox info projects:be:api   # repo URL, branch, JDK, builder, artifact pattern
-localbox info services:db:primary  # image, ports, volumes, depends_on, healthcheck
+localbox projects info be:api      # repo URL, branch, JDK, builder, artifact pattern
+localbox services info db:primary  # image, ports, volumes, depends_on, healthcheck
 ```
 
-**Improved `localbox status`**
+**Improved `localbox projects status`**
 
 Currently shows raw `git status`. Add: current branch name, commits ahead/behind the remote, and whether a built artifact exists in `.build/projects/<name>/`.
 
@@ -123,7 +115,7 @@ Profiles are implemented but disabled with `# TODO: profiles temporarily disable
 
 ## Will Not Implement
 
-### `localbox status services` / `localbox start` / `localbox stop` / `localbox logs`
+### `localbox services status` / `localbox start` / `localbox stop` / `localbox logs`
 
 Localbox will not wrap `docker compose` commands. Docker Compose already has an excellent CLI:
 

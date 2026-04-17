@@ -4,48 +4,46 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.2.0] - 2026-04-17
 
-### Changed
+### BREAKING: CLI restructured to `localbox <domain> <command>`
 
-- `compose generate` no longer writes a default `restart: unless-stopped`
-  on every service. Services now inherit Docker Compose's own default (no
-  restart). Users who want a restart policy can opt in per-service via
-  `ComposeConfig(extra={"restart": "unless-stopped"})`.
-- `compose generate` now double-quotes every entry in a service's `ports:`
-  list in the generated `docker-compose.yml`. This silences Docker Compose's
-  `unquoted port mapping` warning for `host_ip:host:container` strings like
-  `0.0.0.0:80:80`.
-- **BREAKING** — Instance access on a `BaseEnv` subclass (e.g.
-  `config.env.db_host`) now returns an `EnvRef` — a `str` subclass whose
-  string form is `"${db_host}"`. F-strings and concatenation therefore
-  produce Docker Compose variable references, not the raw values. The
-  generated `docker-compose.yml` contains `${field_name}` references for
-  every compose field (ports, environment, volumes, extras, healthchecks,
-  ...) and the real values are written once to `.env` alongside it.
-- **BREAKING** — Class-level `Env.<field>` sentinel references inside
-  `ComposeConfig.environment` are now rejected. Use instance access on
-  `config.env.<field>` instead.
-- `Builder.environment` values that are `EnvRef` instances are automatically
-  resolved to their raw value before being passed to `docker run -e`, since
-  `docker run` does not perform `${NAME}` substitution.
-- New `BaseEnv.raw_value(name)` and `BaseEnv.raw_values()` accessors return
-  the literal values, for the rare code paths (e.g. build-time scripts) that
-  need them. `EnvRef.raw` exposes the same value on a single reference.
-- `EnvRef` is exported from `localbox.models`.
+The CLI is now **domain-first**. The legacy verb-first shape (`localbox <verb> <domain>[:path]`) is removed — there are no deprecation aliases.
 
-### Migration
+#### Translation table
 
-- Replace every `Env.<field>` in `ComposeConfig.environment` or `extra` with
-  `config.env.<field>` (instance access through your solution's
-  `SolutionConfig`).
-- If any `solution.py` relied on `config.env.<field>` returning the literal
-  value (e.g. passing it to a custom script or using it in a comparison),
-  switch to `config.env.raw_value("<field>")`.
-- `solution-override.py` files that do
-  `solution.config.env.db_pass = "value"` continue to work unchanged — the
-  assignment updates both the `EnvRef` attribute and the underlying
-  raw-value map.
+| Old | New |
+|---|---|
+| `localbox init` | `localbox solution init` |
+| `localbox init-override` | `localbox override init` |
+| `localbox list projects` | `localbox projects list` |
+| `localbox list services` | `localbox services list` |
+| `localbox clone projects` | `localbox projects clone` |
+| `localbox clone projects:api` | `localbox projects clone api` |
+| `localbox fetch projects` | `localbox projects fetch` |
+| `localbox fetch projects:libs` | `localbox projects fetch libs` |
+| `localbox switch projects -b feat` | `localbox projects switch -b feat` |
+| `localbox switch projects:api -b main` | `localbox projects switch api -b main` |
+| `localbox build projects` | `localbox projects build` |
+| `localbox build projects:libs:utils` | `localbox projects build libs:utils` |
+| `localbox build services` | `localbox services build` |
+| `localbox build services:be` | `localbox services build be` |
+| `localbox status projects` | `localbox projects status` |
+| `localbox clean projects` | `localbox projects clean` |
+| `localbox compose generate` | unchanged |
+| `localbox doctor` / `config` / `completion` / `prune …` / `purge` | unchanged (top-level utilities) |
+
+#### New capabilities
+
+- **Multiple short-form targets per command**: `localbox projects build be:api fe:api workers` resolves and unions all three tokens in a single call.
+- **Targets are scoped to the current domain** and written short-form — no redundant `projects:` / `services:` prefix.
+- **Empty target list means "all items in this domain"**, replacing the legacy `localbox build projects` fallback.
+- **`projects build` and `services build` are now two independent commands** — no more target sniffing to decide which builder to run.
+- New reserved subcommand space under `localbox override …` for the planned `show` / `set` / `clear` verbs.
+
+#### Why
+
+The legacy grammar mixed verb and domain (`localbox <verb> <domain>[:path]`), which made the target-argument rules ambiguous (is `projects:libs` a group or a project?) and forced `build` to sniff its targets to decide whether to run project or service builders. Domain-first shape closes all three problems and gives each domain a natural home for future subcommands.
 
 ## [0.1.0] - 2026-02-28
 

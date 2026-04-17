@@ -189,7 +189,8 @@ def find_solution_root(start_path: Path | None = None) -> Path:
 
     raise SolutionNotFoundError(
         f"Not a localbox solution directory ({CONFIG_FILE} not found).\n"
-        f"Run 'localbox init' to create a new solution, or navigate to an existing solution."
+        f"Run 'localbox solution init' to create a new solution, "
+        f"or navigate to an existing solution."
     )
 
 

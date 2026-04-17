@@ -131,19 +131,19 @@ picks up the new value, while `docker-compose.yml` keeps referencing it as
 ## Step 4 — Clone the project
 
 ```bash
-localbox clone projects
+localbox projects clone
 ```
 
 Localbox clones `spring-petclinic-rest` from GitHub into `.build/projects/pet_clinic/`.
 
-If the solution had multiple projects, they would all be cloned here. Use `localbox status projects` to check the state of all repos at any time.
+If the solution had multiple projects, they would all be cloned here. Use `localbox projects status` to check the state of all repos at any time.
 
 ---
 
 ## Step 5 — Build the project
 
 ```bash
-localbox build projects
+localbox projects build
 ```
 
 What happens:
@@ -162,7 +162,7 @@ Check progress in `.build/logs/pet_clinic.log` or add `--verbose` to see output 
 ## Step 6 — Build the service image
 
 ```bash
-localbox build services
+localbox services build
 ```
 
 The `api` service uses a custom `assets/Dockerfile` that packages the compiled JAR into a runtime image. Localbox runs `docker buildx build` with the project directory as a named build context.
@@ -224,9 +224,9 @@ docker compose down -v     # stop containers and delete database volume
 
 | Command | What happened |
 |---------|--------------|
-| `localbox clone projects` | Cloned the Git repo into `.build/projects/pet_clinic/` |
-| `localbox build projects` | Ran Maven inside Docker; JAR is in `.build/projects/pet_clinic/target/` |
-| `localbox build services` | Built the runtime Docker image from `assets/Dockerfile` |
+| `localbox projects clone` | Cloned the Git repo into `.build/projects/pet_clinic/` |
+| `localbox projects build` | Ran Maven inside Docker; JAR is in `.build/projects/pet_clinic/target/` |
+| `localbox services build` | Built the runtime Docker image from `assets/Dockerfile` |
 | `localbox compose generate` | Wrote `docker-compose.yml` with all env vars, ports, volumes wired together |
 | `docker compose up -d` | Started `db` (Postgres) and `api` (Spring Boot) containers |
 
@@ -238,7 +238,7 @@ Now that you've seen the pattern, create a new solution:
 
 ```bash
 mkdir my-project && cd my-project
-localbox init
+localbox solution init
 ```
 
 Edit the generated `solution.py` to define your projects and services.

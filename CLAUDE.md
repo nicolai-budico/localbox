@@ -97,16 +97,23 @@ Config loading: `solution.py` imports Python modules, scans for `Project`, `Serv
 source .venv/bin/activate
 cd solutions/myapp
 
-# Target syntax: type:group:name
-localbox list projects                    # List all projects
-localbox clone projects:libs:utils        # Clone single project
-localbox build projects                   # Build all projects
-localbox status projects                  # Show status
+# Grammar: localbox <domain> <command> [targets…]
+# Targets are short-form: <group>, <name>, or <group>:<name>
+localbox projects list                    # List all projects
+localbox projects clone libs:utils        # Clone single project
+localbox projects build                   # Build all projects
+localbox projects build be:api fe:api workers   # Multiple short-form targets
+localbox projects status                  # Show status
 
-localbox list services                    # List all services
+localbox services list                    # List all services
+localbox services build db:primary        # Build one service image
 
 localbox compose generate                 # Generate docker-compose.yml
 docker compose up -d                      # Start all services (manage via docker directly)
+
+# Scaffolding:
+localbox solution init                    # Create solution.py + assets/
+localbox override init                    # Create solution-override.py
 ```
 
 ## Key Conventions
@@ -117,15 +124,27 @@ docker compose up -d                      # Start all services (manage via docke
 - Load order: `solution.py` → `projects.py` → `services.py` → `projects/*.py` → `services/*.py`
 
 ### Target Syntax
-```
-projects                    # All projects
-projects:api                # Single project (root level)
-projects:libs               # All in libs group
-projects:libs:utils         # Single grouped project
 
-services:db                 # All db services
-services:db:primary         # Single service
+Under the domain-first grammar, targets live inside `localbox <domain>` and
+are always short-form — no redundant `projects:` or `services:` prefix. No
+targets means "all items in this domain".
+
 ```
+# Under `localbox projects <verb>`:
+(no target)           # All projects
+api                   # Single ungrouped project
+libs                  # All projects in group "libs"
+libs:utils            # Single grouped project
+
+# Under `localbox services <verb>`:
+(no target)           # All services
+db                    # All services in group "db"
+db:primary            # Single service
+```
+
+Multiple targets are allowed and union:
+`localbox projects build be:api fe:api workers` builds the two qualified
+projects plus every project in the `workers` group.
 
 ### Build System
 - All builds run inside Docker containers via the `Builder` model
@@ -160,7 +179,7 @@ Run all checks in this order:
 ruff format src/ tests/       # auto-format (must run before check)
 ruff check src/ tests/        # lint
 mypy src/localbox/            # type-check
-pytest tests/ -q              # tests (212 items, 3 skipped)
+pytest tests/ -q              # tests (236 items, 3 skipped)
 ```
 All four must pass cleanly. CI will fail the release if any do not.
 

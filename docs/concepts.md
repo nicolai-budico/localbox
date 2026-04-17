@@ -43,7 +43,7 @@ my-solution/            ← solution root
     └── maven/          ← build cache (maven, gradle, node)
 ```
 
-Everything in Localbox is relative to the solution root. When you run `localbox clone projects`, it clones into `<solution-root>/.build/projects/`. The `docker-compose.yml` is written to `<solution-root>/`.
+Everything in Localbox is relative to the solution root. When you run `localbox projects clone`, it clones into `<solution-root>/.build/projects/`. The `docker-compose.yml` is written to `<solution-root>/`.
 
 ### Multi-file solutions
 
@@ -102,13 +102,15 @@ app = JavaProject(
 
 The name follows the pattern `group:local_name`. A colon splits a project into a group and a local identifier:
 
-| Name | Group | Local name | Target syntax |
-|------|-------|-----------|---------------|
-| `"api"` | — | `api` | `projects:api` |
-| `"backend:api"` | `backend` | `api` | `projects:backend:api` |
-| `"libs:utils"` | `libs` | `utils` | `projects:libs:utils` |
+Project targets under the `projects` domain are short-form: `<name>`, `<group>`, or `<group>:<name>` (no domain prefix).
 
-`localbox list projects` shows the tree. `localbox build projects:backend` builds everything in the `backend` group.
+| Name | Group | Local name | Target under `localbox projects …` |
+|------|-------|-----------|------------------------------------|
+| `"api"` | — | `api` | `api` |
+| `"backend:api"` | `backend` | `api` | `backend:api` (or `backend` for the whole group) |
+| `"libs:utils"` | `libs` | `utils` | `libs:utils` (or `libs` for the whole group) |
+
+`localbox projects list` shows the tree. `localbox projects build backend` builds everything in the `backend` group.
 
 ### Clone directory
 
