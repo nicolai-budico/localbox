@@ -57,18 +57,18 @@
 
 ## 9. Open PR, merge, then cut `v0.2`
 
-- [ ] 9.1 Push a feature branch with all of the above changes. Open a PR into `main` with a descriptive title (e.g., `chore: prepare v0.2 release line and retire v0.1`) and a body summarizing Sections 1-7 above. Wait for CI green.
-- [ ] 9.2 Merge the PR with `gh pr merge --merge` (the default strategy for this repo; preserves the Verified merge commit).
-- [ ] 9.3 After merge, from a clean checkout of the updated `main`, run `git push origin main:refs/heads/v0.2`. This pushes the `main` HEAD to a new `v0.2` branch and triggers `.github/workflows/release-create.yml` (now listening on `v0.2`), which tags `v0.2.0` and publishes the GitHub Release.
-- [ ] 9.4 Verify: `gh release view v0.2.0` shows a release with auto-generated notes; `git ls-remote --tags origin v0.2.0` lists the tag; `gh run list --workflow=release-create.yml --limit 1` shows the run completed successfully.
+- [x] 9.1 Push a feature branch with all of the above changes. Open a PR into `main` with a descriptive title (e.g., `chore: prepare v0.2 release line and retire v0.1`) and a body summarizing Sections 1-7 above. Wait for CI green.
+- [x] 9.2 Merge the PR with `gh pr merge --merge` (the default strategy for this repo; preserves the Verified merge commit).
+- [x] 9.3 After merge, from a clean checkout of the updated `main`, run `git push origin main:refs/heads/v0.2`. This pushes the `main` HEAD to a new `v0.2` branch and triggers `.github/workflows/release-create.yml` (now listening on `v0.2`), which tags `v0.2.0` and publishes the GitHub Release.
+- [x] 9.4 Verify: `gh release view v0.2.0` shows a release with auto-generated notes; `git ls-remote --tags origin v0.2.0` lists the tag; `gh run list --workflow=release-create.yml --limit 1` shows the run completed successfully.
 
 ## 10. Smoke-test the release scripts against `v0.2`
 
-- [ ] 10.1 From a clean tree on the updated `main`, run `./scripts/create-release-pr.sh`. Expected: the script reads `0.2.0` from `origin/v0.2`, computes `NEXT=0.2.1`, creates `release-0.2.1`, merges `main` (resolving the `pyproject.toml` conflict automatically), bumps the version to `0.2.1`, pushes the branch, opens a PR into `v0.2`, and blocks on CI until green.
-- [ ] 10.2 Confirm the PR exists (`gh pr list --base v0.2 --head release-0.2.1`) with CI passing.
-- [ ] 10.3 **Close the PR without merging** — this is a smoke test, not a real release. Delete the remote branch with `git push origin --delete release-0.2.1` and the local branch with `git branch -D release-0.2.1` after switching back to `main`.
-- [ ] 10.4 Document the smoke-test result in the PR that landed Section 1-7 (as a follow-up comment) so future readers can see the mechanism was validated.
+- [x] 10.1 From a clean tree on the updated `main`, run `./scripts/create-release-pr.sh`. Expected: the script reads `0.2.0` from `origin/v0.2`, computes `NEXT=0.2.1`, creates `release-0.2.1`, merges `main` (resolving the `pyproject.toml` conflict automatically), bumps the version to `0.2.1`, pushes the branch, opens a PR into `v0.2`, and blocks on CI until green.
+- [x] 10.2 Confirm the PR exists (`gh pr list --base v0.2 --head release-0.2.1`) with CI passing.
+- [x] 10.3 **Close the PR without merging** — this is a smoke test, not a real release. Delete the remote branch with `git push origin --delete release-0.2.1` and the local branch with `git branch -D release-0.2.1` after switching back to `main`.
+- [x] 10.4 Document the smoke-test result in the PR that landed Section 1-7 (as a follow-up comment) so future readers can see the mechanism was validated.
 
 ## 11. Archive the OpenSpec change
 
-- [ ] 11.1 After Sections 1-10 are complete and the smoke test has been confirmed, move `openspec/changes/prepare-v0-2-release-line/` to `openspec/changes/archive/2026-MM-DD-prepare-v0-2-release-line/` using the date of archival. Matches the archive pattern used for `2026-04-10-release-full-cycle-script` and other completed changes.
+- [x] 11.1 After Sections 1-10 are complete and the smoke test has been confirmed, move `openspec/changes/prepare-v0-2-release-line/` to `openspec/changes/archive/2026-MM-DD-prepare-v0-2-release-line/` using the date of archival. Matches the archive pattern used for `2026-04-10-release-full-cycle-script` and other completed changes.
