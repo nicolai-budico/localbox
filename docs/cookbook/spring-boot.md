@@ -103,9 +103,9 @@ solution.config.env.db_pass = "my-local-password"
 ## Commands
 
 ```bash
-localbox clone projects
-localbox build projects
-localbox build services
+localbox projects clone
+localbox projects build
+localbox services build
 localbox compose generate
 docker compose up -d
 ```

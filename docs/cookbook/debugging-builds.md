@@ -37,7 +37,7 @@ The log contains the full build output — Maven resolver output, compiler error
 Add `-v` before the subcommand to see the exact Docker command that Localbox constructs:
 
 ```bash
-localbox -v build projects:backend:api
+localbox -v projects build backend:api
 ```
 
 Verbose output shows:
@@ -70,10 +70,10 @@ Docker caches layers. If you suspect a stale builder image or cached dependency:
 
 ```bash
 # Rebuild without Docker layer cache
-localbox build projects:backend:api --no-cache
+localbox projects build backend:api --no-cache
 
 # Also works for service images
-localbox build services:be:api --no-cache
+localbox services build be:api --no-cache
 ```
 
 `--no-cache` passes `--no-cache` to `docker build` and rebuilds all layers from scratch.
@@ -83,10 +83,10 @@ localbox build services:be:api --no-cache
 ## Step 4 — Check project status
 
 ```bash
-localbox status projects
+localbox projects status
 ```
 
-This shows which projects are cloned, which branch they're on, and when they were last built. If a project shows "not cloned", the source directory is missing — run `localbox clone projects` first.
+This shows which projects are cloned, which branch they're on, and when they were last built. If a project shows "not cloned", the source directory is missing — run `localbox projects clone` first.
 
 ---
 
@@ -128,12 +128,12 @@ This is the fastest way to reproduce and fix environment issues interactively.
 Service images are built with `docker buildx build`. To debug a failing service build:
 
 ```bash
-localbox -v build services:be:api
+localbox -v services build be:api
 ```
 
 This prints the full `docker buildx build` command, including all `--build-context` arguments. If a `COPY --from=api` fails, check that:
 
-1. `localbox build projects:backend:api` completed successfully
+1. `localbox projects build backend:api` completed successfully
 2. The artifact path in the Dockerfile matches what was actually produced
 
 ---
@@ -158,7 +158,7 @@ api = JavaProject("api", repo="...", jdk=17, builder=maven())
 The project hasn't been cloned yet:
 
 ```bash
-localbox clone projects:backend:api
+localbox projects clone backend:api
 ```
 
 Or if you see output like `Skip api (not cloned)`, the clone failed or was never run.
@@ -169,8 +169,8 @@ The Maven dependency can't be found. Possible causes:
 
 1. **Missing dependency in cache** — A library that `api` depends on via `deps=` wasn't built first. Build in the correct order:
    ```bash
-   localbox build projects:libs    # build libraries first
-   localbox build projects:backend # then applications
+   localbox projects build libs    # build libraries first
+   localbox projects build backend # then applications
    ```
 
 2. **Private registry not configured** — Add a `settings.xml` with your Nexus/Artifactory URL. See [private-registry.md](private-registry.md).
@@ -231,11 +231,11 @@ curl http://localhost:8080/actuator/health
 
 ```bash
 # List all detected projects and services
-localbox list projects
-localbox list services
+localbox projects list
+localbox services list
 
 # Show full status (cloned, branch, last build)
-localbox status projects
+localbox projects status
 ```
 
 If a project or service isn't listed, it wasn't detected. Common reasons:

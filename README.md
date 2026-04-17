@@ -26,8 +26,8 @@ db = Service(
 ```
 
 ```bash
-localbox clone projects   # git clone all repos
-localbox build projects   # build inside Docker (no local JDK needed)
+localbox projects clone   # git clone all repos
+localbox projects build   # build inside Docker (no local JDK needed)
 localbox compose generate # write docker-compose.yml + .env
 docker compose up -d      # start everything
 ```
@@ -72,9 +72,9 @@ The fastest way to see Localbox in action is the included example — Spring Pet
 cd example
 cp solution-override.py.example solution-override.py
 # Edit solution-override.py and set db_pass to any value
-localbox clone projects
-localbox build projects
-localbox build services
+localbox projects clone
+localbox projects build
+localbox services build
 localbox compose generate
 docker compose up -d
 # API: http://localhost:9966/petclinic/api/vets
@@ -89,10 +89,10 @@ See [example/README.md](example/README.md) for a step-by-step walkthrough.
 
 ```bash
 mkdir my-project && cd my-project
-localbox init                  # creates solution.py, assets/, patches/
+localbox solution init         # creates solution.py, assets/, patches/
 # edit solution.py
-localbox clone projects
-localbox build projects
+localbox projects clone
+localbox projects build
 localbox compose generate
 docker compose up -d
 ```
@@ -184,60 +184,89 @@ Load order: `solution.py` → `projects.py` → `services.py` → `projects/*.py
 
 ## CLI Reference
 
+The CLI is **domain-first**: `localbox <domain> <command> [targets…]`. Domains are `projects`, `services`, `compose`, `override`, and `solution`. Top-level utilities (`doctor`, `config`, `completion`, `prune`, `purge`) have no domain.
+
 ### Target Syntax
 
-```bash
-projects                    # All projects
-projects:api                # Single project (root level)
-projects:libs               # All projects in the "libs" group
-projects:libs:utils         # Single grouped project
+Targets are **short-form tokens**, scoped to the current domain. No `projects:` or `services:` prefix:
 
-services                    # All services
-services:db                 # All services in the "db" group
-services:db:primary         # Single service
+```bash
+# Under `localbox projects <command> …`
+(no target)                 # All projects
+api                         # Single ungrouped project
+libs                        # All projects in the "libs" group
+libs:utils                  # Single grouped project
+be:api fe:api workers       # Multiple targets (union, deduplicated)
+
+# Under `localbox services <command> …`
+(no target)                 # All services
+db                          # All services in the "db" group
+db:primary                  # Single service
 ```
 
 ### Commands
 
 ```bash
-# Initialization
-localbox init                           # Create solution.py, assets/, patches/
-localbox init-override                  # Create solution-override.py template
-localbox doctor                         # Verify system requirements
+# Solution & override scaffolding
+localbox solution init                  # Create solution.py, assets/, patches/
+localbox override init                  # Create solution-override.py template
 
-# Project management
-localbox clone projects                 # Clone all repos
-localbox clone projects:api             # Clone single project
-localbox fetch projects                 # git pull (all)
-localbox fetch projects:api             # git pull (one)
-localbox switch projects -b feature     # Switch branch
-localbox build projects                 # Build all (in dependency order)
-localbox build projects:libs            # Build group
-localbox status projects                # Git status of all repos
+# Projects
+localbox projects list                  # List projects (tree view)
+localbox projects clone                 # Clone all repos
+localbox projects clone api             # Clone a single project
+localbox projects fetch                 # git pull (all)
+localbox projects fetch libs            # git pull for every project in the libs group
+localbox projects switch -b feature     # Switch branch (all projects)
+localbox projects build                 # Build all (in dependency order)
+localbox projects build be:api workers  # Build multiple targets
+localbox projects status                # Git status of all repos
+localbox projects clean                 # Run builder clean (mvn clean, gradle clean, …)
 
-# Service image building
-localbox build services                 # Build all service images
-localbox build services:be              # Build a group
+# Services
+localbox services list                  # List services (tree view)
+localbox services build                 # Build all service images
+localbox services build be              # Build one group
 
 # Docker Compose
 localbox compose generate               # Generate docker-compose.yml and .env
 docker compose up -d                    # Start services (Docker manages lifecycle)
 docker compose down                     # Stop services
 
-# Info
+# Utilities (top-level — no domain)
+localbox doctor                         # Verify system requirements
 localbox config                         # Show solution config
-localbox list projects                  # List projects (tree view)
-localbox list services                  # List services (tree view)
-localbox clean projects              # Run builder clean (mvn clean, gradle clean, etc.)
-localbox prune caches                # Remove .build/maven, .build/gradle, .build/node
-localbox prune builders              # Remove builder Docker images
-localbox prune images                # Remove service Docker images
-localbox prune all                   # Remove all caches + images
-localbox purge                       # Remove entire .build/ directory
+localbox prune caches                   # Remove .build/maven, .build/gradle, .build/node
+localbox prune builders                 # Remove builder Docker images
+localbox prune images                   # Remove service Docker images
+localbox prune all                      # Remove all caches + images
+localbox purge                          # Remove entire .build/ directory
 
 # Shell completion
 localbox completion bash > ~/.local/share/bash-completion/completions/localbox
 ```
+
+### Migrating from the legacy grammar
+
+| Old | New |
+|---|---|
+| `localbox init` | `localbox solution init` |
+| `localbox init-override` | `localbox override init` |
+| `localbox clone projects` | `localbox projects clone` |
+| `localbox clone projects:api` | `localbox projects clone api` |
+| `localbox fetch projects:libs` | `localbox projects fetch libs` |
+| `localbox switch projects -b feat` | `localbox projects switch -b feat` |
+| `localbox build projects` | `localbox projects build` |
+| `localbox build projects:libs:utils` | `localbox projects build libs:utils` |
+| `localbox build services:be` | `localbox services build be` |
+| `localbox status projects` | `localbox projects status` |
+| `localbox list projects` | `localbox projects list` |
+| `localbox list services` | `localbox services list` |
+| `localbox clean projects` | `localbox projects clean` |
+| `localbox compose generate` | `localbox compose generate` (unchanged) |
+| `localbox doctor` / `config` / `prune …` / `purge` | unchanged (top-level utilities) |
+
+Legacy forms are removed — there are no deprecation aliases.
 
 ---
 
@@ -284,7 +313,7 @@ import solution
 solution.config.env.db_pass = "my-local-password"
 ```
 
-Generate a template: `localbox init-override`
+Generate a template: `localbox override init`
 
 ### Referencing env values in services
 
@@ -466,12 +495,12 @@ Start Docker Desktop or the Docker Engine service. Run `localbox doctor` to veri
 Your SSH key is not registered with the Git host. Check `ssh -T git@github.com`. For HTTPS repos, no SSH key is needed.
 
 **`env.db_pass is required but not set`**
-Create `solution-override.py` and set the required value: `solution.config.env.db_pass = "mypassword"`. Run `localbox init-override` to generate a template.
+Create `solution-override.py` and set the required value: `solution.config.env.db_pass = "mypassword"`. Run `localbox override init` to generate a template.
 
 **BuildKit not available**
 Enable BuildKit: `export DOCKER_BUILDKIT=1`, or update Docker to 20.10+ where it is enabled by default.
 
-**`localbox build projects` fails with a non-zero exit code**
+**`localbox projects build` fails with a non-zero exit code**
 Check `.build/logs/<project-name>.log` for the full build output. Pass `--verbose` to see output in the terminal.
 
 ---

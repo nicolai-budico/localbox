@@ -57,8 +57,8 @@ The `db_pass` field has no default value — localbox will raise an error if it 
 Localbox clones the external Git repository and builds it inside a Docker container using Maven — no local JDK or Maven installation required:
 
 ```bash
-localbox clone projects
-localbox build projects
+localbox projects clone
+localbox projects build
 ```
 
 **First run downloads ~200 MB of Maven dependencies — this takes a few minutes. Subsequent builds are fast** because the dependency cache is stored in `.build/maven/` and reused.
@@ -68,7 +68,7 @@ localbox build projects
 Once the JAR is built, create the runtime Docker image for the API service:
 
 ```bash
-localbox build services
+localbox services build
 ```
 
 ### 5. Generate & Run
@@ -94,9 +94,9 @@ docker compose ps
 ## What just happened?
 
 1. **`solution.py`** defined the environment: 1 Java project, 1 database service, 1 API service.
-2. **`localbox clone`** fetched the source code for `spring-petclinic-rest` into `.build/projects/pet_clinic/`.
-3. **`localbox build projects`** spun up a Maven container, mounted the source code, compiled it, and cached the `.m2` repository in `.build/maven/` for speed.
-4. **`localbox build services`** built a runtime image for the API service using `assets/Dockerfile`, which copied the compiled JAR from the build step.
+2. **`localbox projects clone`** fetched the source code for `spring-petclinic-rest` into `.build/projects/pet_clinic/`.
+3. **`localbox projects build`** spun up a Maven container, mounted the source code, compiled it, and cached the `.m2` repository in `.build/maven/` for speed.
+4. **`localbox services build`** built a runtime image for the API service using `assets/Dockerfile`, which copied the compiled JAR from the build step.
 5. **`localbox compose generate`** created a `docker-compose.yml` that wires up the database and API service with the correct environment variables and networking.
 
 ## Stopping

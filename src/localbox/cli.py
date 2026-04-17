@@ -1,4 +1,11 @@
-"""CLI entry point for localbox."""
+"""CLI entry point for localbox.
+
+The CLI uses a domain-first grammar: ``localbox <domain> <command> [args…]``,
+where ``<domain>`` is one of ``projects``, ``services``, ``compose``,
+``override``, ``solution``. Utility commands that are not scoped to a
+single domain (``doctor``, ``config``, ``completion``, ``purge``, ``prune``)
+remain top-level.
+"""
 
 import ast
 import re
@@ -59,31 +66,45 @@ def load_solution_or_exit() -> Solution:
         sys.exit(1)
 
 
-def complete_targets(ctx: click.Context, param: click.Parameter, incomplete: str) -> list[str]:
-    """Shell completion for targets."""
+def _complete_domain_targets(incomplete: str, domain: str) -> list[str]:
+    """Shared completion helper: emit short-form tokens for one domain."""
     try:
         solution = load_solution()
-        suggestions = []
-
-        suggestions.append("projects")
-        suggestions.append("services")
-
-        for g in solution.get_project_groups():
-            suggestions.append(f"projects:{g}")
-
-        for p in solution.projects.values():
-            suggestions.append(f"projects:{p.name}")
-
-        for g in solution.get_service_groups():
-            suggestions.append(f"services:{g}")
-
-        for s in solution.services.values():
-            suggestions.append(f"services:{s.name}")
-
-        return [s for s in suggestions if s.startswith(incomplete)]
-
     except Exception:
         return []
+
+    suggestions: list[str] = []
+    if domain == "projects":
+        for g in solution.get_project_groups():
+            suggestions.append(g)
+        for p in solution.projects.values():
+            if p.group:
+                suggestions.append(f"{p.group}:{p.local_name}")
+            else:
+                suggestions.append(p.name or "")
+    elif domain == "services":
+        for g in solution.get_service_groups():
+            suggestions.append(g)
+        for s in solution.services.values():
+            if s.group:
+                suggestions.append(f"{s.group}:{s.local_name}")
+            else:
+                suggestions.append(s.name or "")
+    return [s for s in suggestions if s and s.startswith(incomplete)]
+
+
+def complete_project_targets(
+    ctx: click.Context, param: click.Parameter, incomplete: str
+) -> list[str]:
+    """Shell completion for short-form project targets."""
+    return _complete_domain_targets(incomplete, "projects")
+
+
+def complete_service_targets(
+    ctx: click.Context, param: click.Parameter, incomplete: str
+) -> list[str]:
+    """Shell completion for short-form service targets."""
+    return _complete_domain_targets(incomplete, "services")
 
 
 @click.group(invoke_without_command=True)
@@ -94,6 +115,9 @@ def cli(ctx: click.Context, verbose: bool, version: bool) -> None:
     """Localbox - Development environment orchestrator.
 
     Manage Git repositories, Docker builds, and service orchestration.
+
+    The CLI uses domain-first grammar: `localbox <domain> <command> [args…]`.
+    Domains: projects, services, compose, override, solution.
     """
     ctx.ensure_object(LocalboxContext)
     ctx.obj.verbose = verbose
@@ -107,42 +131,43 @@ def cli(ctx: click.Context, verbose: bool, version: bool) -> None:
 
 
 # =============================================================================
-# Utility Commands
+# Domain groups
 # =============================================================================
 
 
-@cli.command()
-@click.option("--force", "-f", is_flag=True, help="Overwrite existing config")
-def init(force: bool) -> None:
-    """Initialize a new localbox solution in the current directory."""
-    config_path = Path.cwd() / CONFIG_FILE
+@cli.group()
+def projects() -> None:
+    """Manage project repositories and builds."""
+    pass
 
-    if config_path.exists() and not force:
-        console.print(
-            f"[yellow]Warning:[/yellow] {CONFIG_FILE} already exists. Use --force to overwrite."
-        )
-        sys.exit(1)
 
-    config_path.write_text(create_default_solution())
-    console.print(f"[green]Created[/green] {CONFIG_FILE}")
+@cli.group()
+def services() -> None:
+    """Manage service images."""
+    pass
 
-    for folder in ["assets", "patches"]:
-        folder_path = Path.cwd() / folder
-        folder_path.mkdir(parents=True, exist_ok=True)
-        console.print(f"[green]Created[/green] {folder}/")
 
-    gitignore = Path.cwd() / ".gitignore"
-    ignore_entries = [".logs/", OVERRIDE_FILE, ".build/"]
-    existing = gitignore.read_text() if gitignore.exists() else ""
-    additions = [e for e in ignore_entries if e not in existing.splitlines()]
-    if additions:
-        with open(gitignore, "a") as f:
-            if existing and not existing.endswith("\n"):
-                f.write("\n")
-            f.write("\n".join(additions) + "\n")
-        console.print("[green]Updated[/green] .gitignore")
+@cli.group()
+def compose() -> None:
+    """Docker Compose operations."""
+    pass
 
-    console.print("\n[bold]Solution initialized![/bold]")
+
+@cli.group()
+def override() -> None:
+    """Manage per-developer solution-override.py."""
+    pass
+
+
+@cli.group()
+def solution() -> None:
+    """Manage the solution scaffold."""
+    pass
+
+
+# =============================================================================
+# Top-level utility commands
+# =============================================================================
 
 
 @cli.command()
@@ -239,48 +264,80 @@ def doctor() -> None:
         sys.exit(1)
 
 
-@cli.group()
-def clean() -> None:
-    """Run builder clean commands inside Docker."""
-    pass
+@cli.command()
+def config() -> None:
+    """Show current solution configuration."""
+    sol = load_solution_or_exit()
+
+    console.print(f"[bold]Solution:[/bold] {sol.root}")
+    console.print(f"[bold]Default branch:[/bold] {sol.default_branch}")
+    console.print()
+
+    console.print("[bold]Directories:[/bold]")
+    console.print(f"  Build:      {sol.directories.build}")
+    console.print(f"  Projects:   {sol.directories.projects}")
+    console.print()
+
+    console.print("[bold]Docker:[/bold]")
+    console.print(f"  Compose project: {sol.docker.compose_project}")
+    console.print(f"  Network:         {sol.docker.network}")
+    console.print()
+
+    console.print(f"[bold]Projects:[/bold] {len(sol.projects)}")
+    console.print(f"[bold]Services:[/bold] {len(sol.services)}")
 
 
-@clean.command("projects")
-@click.argument("targets", nargs=-1, shell_complete=complete_targets)
-@pass_context
-def clean_projects(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
-    """Run builder clean for projects (mvn clean, gradle clean, rm node_modules).
+@cli.command("completion")
+@click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]), default="bash")
+def completion(shell: str) -> None:
+    """Generate shell completion script.
 
-    Examples:
-        localbox clean projects              # clean all projects
-        localbox clean projects:api          # clean single project
+    Install with:
+        localbox completion bash > ~/.local/share/bash-completion/completions/localbox
+        source ~/.local/share/bash-completion/completions/localbox
     """
-    from localbox.builders.build import run_builder_clean
-    from localbox.commands.project import _print_summary
+    import os
+    import subprocess
+    from importlib.resources import files
 
-    solution = load_solution_or_exit()
-    effective = targets if targets else ("projects",)
-    try:
-        projects = resolve_targets(solution, effective, "projects")
-    except TargetError as e:
-        console.print(f"[red]Error:[/red] {e}")
-        sys.exit(1)
-    results: list[tuple[str, str]] = []
-    for project in projects:
-        if not isinstance(project, Project):
-            continue
-        source_dir = project.resolve_source_dir(solution.directories.projects)
-        if not source_dir.exists():
-            console.print(f"[yellow]Skip[/yellow] {project.name} (not cloned)")
-            results.append((project.name or "", "skipped"))
-            continue
-        console.print(f"[bold]Cleaning[/bold] {project.name}")
-        ok = run_builder_clean(solution, project, source_dir, verbose=ctx.verbose)
-        results.append((project.name or "", "cleaned" if ok else "failed"))
-    if len(results) > 1 or any(s == "failed" for _, s in results):
-        _print_summary(results, "Clean Summary")
-    if any(s == "failed" for _, s in results):
-        sys.exit(1)
+    if shell == "bash":
+        script_path = files("localbox.completions").joinpath("localbox.bash")
+        print(script_path.read_text())
+    elif shell == "zsh":
+        result = subprocess.run(
+            ["localbox"],
+            env={**os.environ, "_LOCALBOX_COMPLETE": "zsh_source"},
+            capture_output=True,
+            text=True,
+        )
+        print(result.stdout)
+    elif shell == "fish":
+        result = subprocess.run(
+            ["localbox"],
+            env={**os.environ, "_LOCALBOX_COMPLETE": "fish_source"},
+            capture_output=True,
+            text=True,
+        )
+        print(result.stdout)
+
+
+@cli.command()
+def purge() -> None:
+    """Remove entire .build/ directory (caches, logs, all build artifacts)."""
+    import shutil
+
+    sol = load_solution_or_exit()
+    build_dir = sol.directories.build
+    if build_dir.exists():
+        shutil.rmtree(build_dir)
+        console.print("[green]Removed[/green] .build/")
+    else:
+        console.print("[yellow]Skip[/yellow] .build/ (does not exist)")
+
+
+# =============================================================================
+# Prune group (top-level)
+# =============================================================================
 
 
 @cli.group()
@@ -301,14 +358,14 @@ def prune_caches(names: tuple[str, ...]) -> None:
     """
     import shutil
 
-    solution = load_solution_or_exit()
-    build_dir = solution.directories.build
+    sol = load_solution_or_exit()
+    build_dir = sol.directories.build
 
     if names:
         targets_to_remove = list(names)
     else:
         seen: set[str] = set()
-        for project in solution.projects.values():
+        for project in sol.projects.values():
             if project.builder:
                 for vol in project.builder.volumes:
                     if isinstance(vol, CacheVolume):
@@ -329,31 +386,33 @@ def prune_caches(names: tuple[str, ...]) -> None:
 
 
 @prune.command("builders")
-@click.argument("targets", nargs=-1, shell_complete=complete_targets)
+@click.argument("targets", nargs=-1, shell_complete=complete_project_targets)
 @pass_context
 def prune_builders(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
     """Remove builder Docker images.
 
     Examples:
-        localbox prune builders              # remove all builder images
-        localbox prune builders projects:api # remove image for specific project
+        localbox prune builders          # remove all builder images
+        localbox prune builders api      # remove image for a specific project
+        localbox prune builders libs     # remove images for all projects in 'libs'
     """
-    solution = load_solution_or_exit()
-    _prune_docker_images(solution, "builder", targets, verbose=ctx.verbose)
+    sol = load_solution_or_exit()
+    _prune_docker_images(sol, "builder", targets, verbose=ctx.verbose)
 
 
 @prune.command("images")
-@click.argument("targets", nargs=-1, shell_complete=complete_targets)
+@click.argument("targets", nargs=-1, shell_complete=complete_service_targets)
 @pass_context
 def prune_images(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
     """Remove service Docker images.
 
     Examples:
-        localbox prune images              # remove all service images
-        localbox prune images services:db  # remove image for specific service
+        localbox prune images            # remove all service images
+        localbox prune images db         # remove images for all services in 'db'
+        localbox prune images db:primary # remove one specific service image
     """
-    solution = load_solution_or_exit()
-    _prune_docker_images(solution, "service", targets, verbose=ctx.verbose)
+    sol = load_solution_or_exit()
+    _prune_docker_images(sol, "service", targets, verbose=ctx.verbose)
 
 
 @prune.command("all")
@@ -366,12 +425,12 @@ def prune_all(ctx: click.Context) -> None:
 
 
 def _prune_docker_images(
-    solution: Solution, image_type: str, targets: tuple[str, ...], verbose: bool = False
+    sol: Solution, image_type: str, targets: tuple[str, ...], verbose: bool = False
 ) -> None:
     """Remove Docker images of the given type (builder or service)."""
     import subprocess
 
-    reference = f"{solution.name}/{image_type}/*"
+    reference = f"{sol.name}/{image_type}/*"
     ls_cmd = [
         "docker",
         "image",
@@ -389,7 +448,7 @@ def _prune_docker_images(
     if targets:
         try:
             items = resolve_targets(
-                solution,
+                sol,
                 targets,
                 "projects" if image_type == "builder" else "services",
             )
@@ -413,18 +472,358 @@ def _prune_docker_images(
             console.print(f"[red]Failed[/red] {image}: {r.stderr.strip()}")
 
 
-@cli.command()
-def purge() -> None:
-    """Remove entire .build/ directory (caches, logs, all build artifacts)."""
-    import shutil
+# =============================================================================
+# projects domain
+# =============================================================================
 
-    solution = load_solution_or_exit()
-    build_dir = solution.directories.build
-    if build_dir.exists():
-        shutil.rmtree(build_dir)
-        console.print("[green]Removed[/green] .build/")
-    else:
-        console.print("[yellow]Skip[/yellow] .build/ (does not exist)")
+
+def _project_sort_key(p: Project) -> str:
+    return p.path_name
+
+
+def _service_sort_key(s: Service) -> str:
+    return s.path_name
+
+
+def list_projects(sol: Solution) -> None:
+    """Display projects as a tree."""
+    if not sol.projects:
+        console.print("[yellow]No projects defined.[/yellow]")
+        return
+
+    tree = Tree("[bold]Projects[/bold]")
+
+    ungrouped = [p for p in sol.projects.values() if not p.group]
+    groups = sol.get_project_groups()
+
+    for project in sorted(ungrouped, key=_project_sort_key):
+        add_project_to_tree(tree, project)
+
+    for group in sorted(groups):
+        group_tree = tree.add(f"[bold cyan]{group}/[/bold cyan]")
+        projs = sorted(sol.get_projects_in_group(group), key=_project_sort_key)
+        for project in projs:
+            add_project_to_tree(group_tree, project)
+
+    console.print(tree)
+
+
+def add_project_to_tree(tree: Tree, project: Project) -> None:
+    """Add a project to the tree display."""
+    name = project.local_name or project.name
+
+    details = ""
+    if project.builder and project.builder.docker_image:
+        if project.builder.docker_image.image:
+            details = project.builder.docker_image.image
+        elif project.builder.docker_image.dockerfile:
+            details = "Dockerfile"
+
+    tree.add(f"{name} [dim]{details}[/dim]")
+
+
+def list_services(sol: Solution) -> None:
+    """Display services as a tree."""
+    if not sol.services:
+        console.print("[yellow]No services defined.[/yellow]")
+        return
+
+    tree = Tree("[bold]Services[/bold]")
+
+    ungrouped = [s for s in sol.services.values() if not s.group]
+    for service in sorted(ungrouped, key=_service_sort_key):
+        add_service_to_tree(tree, service)
+
+    for group in sorted(sol.get_service_groups()):
+        group_tree = tree.add(f"[bold cyan]{group}/[/bold cyan]")
+        svcs = sorted(sol.get_services_in_group(group), key=_service_sort_key)
+        for service in svcs:
+            add_service_to_tree(group_tree, service)
+
+    console.print(tree)
+
+
+def add_service_to_tree(tree: Tree, service: Service) -> None:
+    """Add a service to the tree display."""
+    name = service.local_name or service.name
+    image_info = service.image.image or service.image.name or ""
+
+    tree.add(f"{name} [dim]{image_info}[/dim]")
+
+
+@projects.command("list")
+def projects_list() -> None:
+    """List all projects as a tree."""
+    sol = load_solution_or_exit()
+    list_projects(sol)
+
+
+@projects.command("clone")
+@click.argument("targets", nargs=-1, shell_complete=complete_project_targets)
+@pass_context
+def projects_clone(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
+    """Clone project repositories."""
+    sol = load_solution_or_exit()
+
+    try:
+        projs = resolve_targets(sol, targets, "projects")
+    except TargetError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+    if not projs:
+        console.print("[yellow]No projects to clone.[/yellow]")
+        return
+
+    from localbox.commands.project import clone_projects
+
+    clone_projects(sol, projs, verbose=ctx.verbose)
+
+
+@projects.command("fetch")
+@click.argument("targets", nargs=-1, shell_complete=complete_project_targets)
+@pass_context
+def projects_fetch(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
+    """Fetch (git pull) project repositories."""
+    sol = load_solution_or_exit()
+
+    try:
+        projs = resolve_targets(sol, targets, "projects")
+    except TargetError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+    if not projs:
+        console.print("[yellow]No projects to fetch.[/yellow]")
+        return
+
+    from localbox.commands.project import fetch_projects
+
+    fetch_projects(sol, projs, verbose=ctx.verbose)
+
+
+@projects.command("switch")
+@click.argument("targets", nargs=-1, shell_complete=complete_project_targets)
+@click.option("--branch", "-b", help="Branch to switch to (default: solution default)")
+@pass_context
+def projects_switch(ctx: LocalboxContext, targets: tuple[str, ...], branch: str | None) -> None:
+    """Switch project branches."""
+    sol = load_solution_or_exit()
+
+    try:
+        projs = resolve_targets(sol, targets, "projects")
+    except TargetError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+    if not projs:
+        console.print("[yellow]No projects to switch.[/yellow]")
+        return
+
+    from localbox.commands.project import switch_projects
+
+    switch_projects(sol, projs, branch=branch, verbose=ctx.verbose)
+
+
+@projects.command("build")
+@click.argument("targets", nargs=-1, shell_complete=complete_project_targets)
+@click.option("--no-cache", is_flag=True, help="Build without Docker layer cache")
+@click.option(
+    "--keep-going",
+    "-k",
+    is_flag=True,
+    help="Continue building remaining projects after a failure (default: stop on first error)",
+)
+@pass_context
+def projects_build(
+    ctx: LocalboxContext,
+    targets: tuple[str, ...],
+    no_cache: bool,
+    keep_going: bool,
+) -> None:
+    """Build projects.
+
+    Examples:
+        localbox projects build                # Build all projects
+        localbox projects build api            # Build single project
+        localbox projects build be fe          # Build two groups
+        localbox projects build be:api workers # Qualified name plus whole group
+    """
+    sol = load_solution_or_exit()
+
+    try:
+        projs = resolve_targets(sol, targets, "projects")
+    except TargetError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+    if not projs:
+        console.print("[yellow]No projects to build.[/yellow]")
+        return
+
+    from localbox.commands.project import build_projects
+
+    build_projects(sol, projs, verbose=ctx.verbose, no_cache=no_cache, keep_going=keep_going)
+
+
+@projects.command("status")
+@click.argument("targets", nargs=-1, shell_complete=complete_project_targets)
+@pass_context
+def projects_status(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
+    """Show git status of projects."""
+    sol = load_solution_or_exit()
+
+    try:
+        projs = resolve_targets(sol, targets, "projects")
+    except TargetError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+    from localbox.commands.project import show_project_status
+
+    show_project_status(sol, projs)
+
+
+@projects.command("clean")
+@click.argument("targets", nargs=-1, shell_complete=complete_project_targets)
+@pass_context
+def projects_clean(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
+    """Run builder clean for projects (mvn clean, gradle clean, rm node_modules).
+
+    Examples:
+        localbox projects clean          # clean all projects
+        localbox projects clean api      # clean single project
+        localbox projects clean libs     # clean a whole group
+    """
+    from localbox.builders.build import run_builder_clean
+    from localbox.commands.project import _print_summary
+
+    sol = load_solution_or_exit()
+    try:
+        projs = resolve_targets(sol, targets, "projects")
+    except TargetError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+    results: list[tuple[str, str]] = []
+    for project in projs:
+        if not isinstance(project, Project):
+            continue
+        source_dir = project.resolve_source_dir(sol.directories.projects)
+        if not source_dir.exists():
+            console.print(f"[yellow]Skip[/yellow] {project.name} (not cloned)")
+            results.append((project.name or "", "skipped"))
+            continue
+        console.print(f"[bold]Cleaning[/bold] {project.name}")
+        ok = run_builder_clean(sol, project, source_dir, verbose=ctx.verbose)
+        results.append((project.name or "", "cleaned" if ok else "failed"))
+    if len(results) > 1 or any(s == "failed" for _, s in results):
+        _print_summary(results, "Clean Summary")
+    if any(s == "failed" for _, s in results):
+        sys.exit(1)
+
+
+# =============================================================================
+# services domain
+# =============================================================================
+
+
+@services.command("list")
+def services_list() -> None:
+    """List all services as a tree."""
+    sol = load_solution_or_exit()
+    list_services(sol)
+
+
+@services.command("build")
+@click.argument("targets", nargs=-1, shell_complete=complete_service_targets)
+@click.option("--no-cache", is_flag=True, help="Build without Docker layer cache")
+@pass_context
+def services_build(ctx: LocalboxContext, targets: tuple[str, ...], no_cache: bool) -> None:
+    """Build service Docker images.
+
+    Examples:
+        localbox services build              # Build all service images
+        localbox services build db:primary   # Build one service image
+        localbox services build db cache     # Build two groups
+    """
+    sol = load_solution_or_exit()
+
+    try:
+        svcs = resolve_targets(sol, targets, "services")
+    except TargetError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+    if not svcs:
+        console.print("[yellow]No services to build.[/yellow]")
+        return
+
+    from localbox.commands.service import build_images
+
+    build_images(sol, svcs, verbose=ctx.verbose, no_cache=no_cache)
+
+
+# =============================================================================
+# compose domain
+# =============================================================================
+
+
+@compose.command("generate")
+def compose_generate() -> None:
+    """Generate docker-compose.yml from service definitions."""
+    sol = load_solution_or_exit()
+
+    from localbox.builders.compose import generate_compose_file
+
+    try:
+        generate_compose_file(sol)
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+
+# =============================================================================
+# solution domain
+# =============================================================================
+
+
+@solution.command("init")
+@click.option("--force", "-f", is_flag=True, help="Overwrite existing config")
+def solution_init(force: bool) -> None:
+    """Initialize a new localbox solution in the current directory."""
+    config_path = Path.cwd() / CONFIG_FILE
+
+    if config_path.exists() and not force:
+        console.print(
+            f"[yellow]Warning:[/yellow] {CONFIG_FILE} already exists. Use --force to overwrite."
+        )
+        sys.exit(1)
+
+    config_path.write_text(create_default_solution())
+    console.print(f"[green]Created[/green] {CONFIG_FILE}")
+
+    for folder in ["assets", "patches"]:
+        folder_path = Path.cwd() / folder
+        folder_path.mkdir(parents=True, exist_ok=True)
+        console.print(f"[green]Created[/green] {folder}/")
+
+    gitignore = Path.cwd() / ".gitignore"
+    ignore_entries = [".logs/", OVERRIDE_FILE, ".build/"]
+    existing = gitignore.read_text() if gitignore.exists() else ""
+    additions = [e for e in ignore_entries if e not in existing.splitlines()]
+    if additions:
+        with open(gitignore, "a") as f:
+            if existing and not existing.endswith("\n"):
+                f.write("\n")
+            f.write("\n".join(additions) + "\n")
+        console.print("[green]Updated[/green] .gitignore")
+
+    console.print("\n[bold]Solution initialized![/bold]")
+
+
+# =============================================================================
+# override domain
+# =============================================================================
 
 
 class _ParsedOverride:
@@ -506,9 +905,9 @@ def _parse_existing_override(path: Path) -> _ParsedOverride:
     return result
 
 
-@cli.command("init-override")
+@override.command("init")
 @click.option("--force", "-f", is_flag=True, help="Regenerate and merge existing values.")
-def init_override(force: bool) -> None:
+def override_init(force: bool) -> None:
     """Create solution-override.py with per-developer override template.
 
     When run with --force on an existing file, values already set in the old file
@@ -542,16 +941,16 @@ def init_override(force: bool) -> None:
 
     # Load without the override so env schema (None = required) is preserved.
     try:
-        solution = load_solution(solution_root)
+        sol = load_solution(solution_root)
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         sys.exit(1)
 
-    override_path.write_text(_generate_override_template(solution, old=old))
+    override_path.write_text(_generate_override_template(sol, old=old))
     console.print(f"[green]Created[/green] {OVERRIDE_FILE}")
 
     # Add to .gitignore
-    gitignore = solution.root / ".gitignore"
+    gitignore = sol.root / ".gitignore"
     existing = gitignore.read_text() if gitignore.exists() else ""
     if OVERRIDE_FILE not in existing:
         with open(gitignore, "a") as f:
@@ -561,7 +960,7 @@ def init_override(force: bool) -> None:
         console.print("[green]Updated[/green] .gitignore")
 
 
-def _generate_override_template(solution: Solution, old: _ParsedOverride | None = None) -> str:
+def _generate_override_template(sol: Solution, old: _ParsedOverride | None = None) -> str:
     """Generate solution-override.py content from the loaded solution.
 
     If ``old`` is provided, values previously set in the old override are
@@ -576,21 +975,21 @@ def _generate_override_template(solution: Solution, old: _ParsedOverride | None 
 
     lines = [
         f"# {OVERRIDE_FILE} — per-developer local overrides. DO NOT COMMIT.",
-        "# Run `localbox init-override --force` to regenerate and merge.",
+        "# Run `localbox override init --force` to regenerate and merge.",
         "",
         "import solution",
     ]
 
-    if solution.projects:
+    if sol.projects:
         lines.append("import projects as p")
 
     # Detect env style: class-based or dict-based
-    raw_env = solution.config.env if solution.config else {}
+    raw_env = sol.config.env if sol.config else {}
     is_class_env = not isinstance(raw_env, dict)
 
     # Solution settings
-    build_dir = solution.config.build_dir if solution.config else ".build"
-    default_branch = solution.config.default_branch if solution.config else "dev"
+    build_dir = sol.config.build_dir if sol.config else ".build"
+    default_branch = sol.config.default_branch if sol.config else "dev"
     lines += [
         "",
         "# ── Solution settings ─────────────────────────────────────────────────",
@@ -657,13 +1056,13 @@ def _generate_override_template(solution: Solution, old: _ParsedOverride | None 
                         lines.append(f'# solution.config.env["{key}"] = {quoted}')
 
     # Project path overrides
-    if solution.projects:
+    if sol.projects:
         lines += [
             "",
             "# ── Project source paths ───────────────────────────────────────────────",
             "# Override if a project is in a non-standard location:",
         ]
-        for proj_name in sorted(solution.projects):
+        for proj_name in sorted(sol.projects):
             attr = proj_name.replace(":", ".").replace("-", "_")
             ref = f"p.{attr}"
             old_path = old.projects.get(ref, {}).get("path") if old else None
@@ -676,345 +1075,24 @@ def _generate_override_template(solution: Solution, old: _ParsedOverride | None 
             "",
             "# Override branch for a specific project (e.g. while on a feature branch):",
         ]
-        for proj_name in sorted(solution.projects):
-            proj = solution.projects[proj_name]
+        for proj_name in sorted(sol.projects):
+            proj = sol.projects[proj_name]
             attr = proj_name.replace(":", ".").replace("-", "_")
             ref = f"p.{attr}"
             old_branch = old.projects.get(ref, {}).get("branch") if old else None
             if old_branch is not None:
                 lines.append(f"{ref}.branch = {old_branch}")
             else:
-                branch = (
-                    proj.git.branch if proj.git and proj.git.branch else solution.default_branch
-                )
+                branch = proj.git.branch if proj.git and proj.git.branch else sol.default_branch
                 lines.append(f'# {ref}.branch = "{branch}"')
 
     lines.append("")
     return "\n".join(lines)
 
 
-@cli.command()
-def config() -> None:
-    """Show current solution configuration."""
-    solution = load_solution_or_exit()
-
-    console.print(f"[bold]Solution:[/bold] {solution.root}")
-    console.print(f"[bold]Default branch:[/bold] {solution.default_branch}")
-    console.print()
-
-    console.print("[bold]Directories:[/bold]")
-    console.print(f"  Build:      {solution.directories.build}")
-    console.print(f"  Projects:   {solution.directories.projects}")
-    console.print()
-
-    console.print("[bold]Docker:[/bold]")
-    console.print(f"  Compose project: {solution.docker.compose_project}")
-    console.print(f"  Network:         {solution.docker.network}")
-    console.print()
-
-    console.print(f"[bold]Projects:[/bold] {len(solution.projects)}")
-    console.print(f"[bold]Services:[/bold] {len(solution.services)}")
-
-
-@cli.command("list")
-@click.argument("target_type", type=click.Choice(["projects", "services"]))
-def list_cmd(target_type: str) -> None:
-    """List all projects or services."""
-    solution = load_solution_or_exit()
-
-    if target_type == "projects":
-        list_projects(solution)
-    else:
-        list_services(solution)
-
-
-def _project_sort_key(p: Project) -> str:
-    return p.path_name
-
-
-def _service_sort_key(s: Service) -> str:
-    return s.path_name
-
-
-def list_projects(solution: Solution) -> None:
-    """Display projects as a tree."""
-    if not solution.projects:
-        console.print("[yellow]No projects defined.[/yellow]")
-        return
-
-    tree = Tree("[bold]Projects[/bold]")
-
-    ungrouped = [p for p in solution.projects.values() if not p.group]
-    groups = solution.get_project_groups()
-
-    for project in sorted(ungrouped, key=_project_sort_key):
-        add_project_to_tree(tree, project)
-
-    for group in sorted(groups):
-        group_tree = tree.add(f"[bold cyan]{group}/[/bold cyan]")
-        projects = sorted(solution.get_projects_in_group(group), key=_project_sort_key)
-        for project in projects:
-            add_project_to_tree(group_tree, project)
-
-    console.print(tree)
-
-
-def add_project_to_tree(tree: Tree, project: Project) -> None:
-    """Add a project to the tree display."""
-    name = project.local_name or project.name
-
-    details = ""
-    if project.builder and project.builder.docker_image:
-        if project.builder.docker_image.image:
-            details = project.builder.docker_image.image
-        elif project.builder.docker_image.dockerfile:
-            details = "Dockerfile"
-
-    tree.add(f"{name} [dim]{details}[/dim]")
-
-
-def list_services(solution: Solution) -> None:
-    """Display services as a tree."""
-    if not solution.services:
-        console.print("[yellow]No services defined.[/yellow]")
-        return
-
-    tree = Tree("[bold]Services[/bold]")
-
-    ungrouped = [s for s in solution.services.values() if not s.group]
-    for service in sorted(ungrouped, key=_service_sort_key):
-        add_service_to_tree(tree, service)
-
-    for group in sorted(solution.get_service_groups()):
-        group_tree = tree.add(f"[bold cyan]{group}/[/bold cyan]")
-        services = sorted(solution.get_services_in_group(group), key=_service_sort_key)
-        for service in services:
-            add_service_to_tree(group_tree, service)
-
-    console.print(tree)
-
-
-def add_service_to_tree(tree: Tree, service: Service) -> None:
-    """Add a service to the tree display."""
-    name = service.local_name or service.name
-    image_info = service.image.image or service.image.name or ""
-
-    tree.add(f"{name} [dim]{image_info}[/dim]")
-
-
 # =============================================================================
-# Project Commands
+# Plugins
 # =============================================================================
-
-
-@cli.command()
-@click.argument("targets", nargs=-1, required=True, shell_complete=complete_targets)
-@pass_context
-def clone(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
-    """Clone project repositories."""
-    solution = load_solution_or_exit()
-
-    try:
-        projects = resolve_targets(solution, targets, "projects")
-    except TargetError as e:
-        console.print(f"[red]Error:[/red] {e}")
-        sys.exit(1)
-
-    if not projects:
-        console.print("[yellow]No projects to clone.[/yellow]")
-        return
-
-    from localbox.commands.project import clone_projects
-
-    clone_projects(solution, projects, verbose=ctx.verbose)
-
-
-@cli.command()
-@click.argument("targets", nargs=-1, required=True, shell_complete=complete_targets)
-@pass_context
-def fetch(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
-    """Fetch (git pull) project repositories."""
-    solution = load_solution_or_exit()
-
-    try:
-        projects = resolve_targets(solution, targets, "projects")
-    except TargetError as e:
-        console.print(f"[red]Error:[/red] {e}")
-        sys.exit(1)
-
-    if not projects:
-        console.print("[yellow]No projects to fetch.[/yellow]")
-        return
-
-    from localbox.commands.project import fetch_projects
-
-    fetch_projects(solution, projects, verbose=ctx.verbose)
-
-
-@cli.command("switch")
-@click.argument("targets", nargs=-1, required=True, shell_complete=complete_targets)
-@click.option("--branch", "-b", help="Branch to switch to (default: solution default)")
-@pass_context
-def switch_branch(ctx: LocalboxContext, targets: tuple[str, ...], branch: str | None) -> None:
-    """Switch project branches."""
-    solution = load_solution_or_exit()
-
-    try:
-        projects = resolve_targets(solution, targets, "projects")
-    except TargetError as e:
-        console.print(f"[red]Error:[/red] {e}")
-        sys.exit(1)
-
-    if not projects:
-        console.print("[yellow]No projects to switch.[/yellow]")
-        return
-
-    from localbox.commands.project import switch_projects
-
-    switch_projects(solution, projects, branch=branch, verbose=ctx.verbose)
-
-
-@cli.command()
-@click.argument("targets", nargs=-1, required=True, shell_complete=complete_targets)
-@click.option("--no-cache", is_flag=True, help="Build without Docker layer cache")
-@click.option(
-    "--keep-going",
-    "-k",
-    is_flag=True,
-    help="Continue building remaining projects after a failure (default: stop on first error)",
-)
-@pass_context
-def build(ctx: LocalboxContext, targets: tuple[str, ...], no_cache: bool, keep_going: bool) -> None:
-    """Build projects or service images.
-
-    Examples:
-        localbox build projects           # Build all projects
-        localbox build projects:backend   # Build backend projects
-        localbox build services           # Build all service images
-        localbox build services:be        # Build backend service images
-    """
-    solution = load_solution_or_exit()
-
-    first_target = targets[0]
-    if first_target.startswith("projects"):
-        try:
-            projects = resolve_targets(solution, targets, "projects")
-        except TargetError as e:
-            console.print(f"[red]Error:[/red] {e}")
-            sys.exit(1)
-
-        if not projects:
-            console.print("[yellow]No projects to build.[/yellow]")
-            return
-
-        from localbox.commands.project import build_projects
-
-        build_projects(
-            solution, projects, verbose=ctx.verbose, no_cache=no_cache, keep_going=keep_going
-        )
-
-    elif first_target.startswith("services"):
-        try:
-            services = resolve_targets(solution, targets, "services")
-        except TargetError as e:
-            console.print(f"[red]Error:[/red] {e}")
-            sys.exit(1)
-
-        if not services:
-            console.print("[yellow]No services to build.[/yellow]")
-            return
-
-        from localbox.commands.service import build_images
-
-        build_images(solution, services, verbose=ctx.verbose, no_cache=no_cache)
-
-    else:
-        console.print(
-            f"[red]Error:[/red] Target must start with 'projects' or 'services': {first_target}"
-        )
-        sys.exit(1)
-
-
-@cli.command()
-@click.argument("targets", nargs=-1, required=True, shell_complete=complete_targets)
-@pass_context
-def status(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
-    """Show git status of projects."""
-    solution = load_solution_or_exit()
-
-    try:
-        projects = resolve_targets(solution, targets, "projects")
-    except TargetError as e:
-        console.print(f"[red]Error:[/red] {e}")
-        sys.exit(1)
-
-    from localbox.commands.project import show_project_status
-
-    show_project_status(solution, projects)
-
-
-# =============================================================================
-# Compose Commands
-# =============================================================================
-
-
-@cli.group()
-def compose() -> None:
-    """Docker Compose operations."""
-    pass
-
-
-@compose.command("generate")
-def compose_generate() -> None:
-    """Generate docker-compose.yml from service definitions."""
-    solution = load_solution_or_exit()
-
-    from localbox.builders.compose import generate_compose_file
-
-    try:
-        generate_compose_file(solution)
-    except ValueError as e:
-        console.print(f"[red]Error:[/red] {e}")
-        sys.exit(1)
-
-
-# =============================================================================
-# Completion
-# =============================================================================
-
-
-@cli.command("completion")
-@click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]), default="bash")
-def completion(shell: str) -> None:
-    """Generate shell completion script.
-
-    Install with:
-        localbox completion bash > ~/.local/share/bash-completion/completions/localbox
-        source ~/.local/share/bash-completion/completions/localbox
-    """
-    import os
-    import subprocess
-    from importlib.resources import files
-
-    if shell == "bash":
-        script_path = files("localbox.completions").joinpath("localbox.bash")
-        print(script_path.read_text())
-    elif shell == "zsh":
-        result = subprocess.run(
-            ["localbox"],
-            env={**os.environ, "_LOCALBOX_COMPLETE": "zsh_source"},
-            capture_output=True,
-            text=True,
-        )
-        print(result.stdout)
-    elif shell == "fish":
-        result = subprocess.run(
-            ["localbox"],
-            env={**os.environ, "_LOCALBOX_COMPLETE": "fish_source"},
-            capture_output=True,
-            text=True,
-        )
-        print(result.stdout)
 
 
 def _load_plugins() -> None:

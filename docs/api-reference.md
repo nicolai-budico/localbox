@@ -400,7 +400,7 @@ class Builder:
 | `build_command` | `str \| None` | `None` | Shell command string for the build step: run as `sh -c "<command>"`. |
 | `build_command_list` | `list[str] \| None` | `None` | Explicit argv for the build step, passed directly to Docker without a shell wrapper. |
 | `build_script` | `str \| None` | `None` | Path to a build script (relative to solution root). Mounted into the container and executed. |
-| `clean_command` | `str \| None` | `None` | Shell command string for the clean step (used by `localbox clean`). |
+| `clean_command` | `str \| None` | `None` | Shell command string for the clean step (used by `localbox projects clean`). |
 | `clean_command_list` | `list[str] \| None` | `None` | Explicit argv for the clean step. |
 | `clean_script` | `str \| None` | `None` | Path to a clean script (relative to solution root). |
 | `volumes` | `Volume \| list[Volume]` | `[]` | Volume mounts. A single `Volume` is normalized to a list. |
@@ -875,22 +875,27 @@ class JavaService(Service):
 
 ## Target syntax reference
 
+The CLI is domain-first: `localbox <domain> <command> [targets…]`. Targets are short-form tokens **scoped to the current domain** — no `projects:` or `services:` prefix:
+
 ```
-<type>[:<group>][:<name>]
+[<group>:]<name>   or   <group>
 ```
 
-| Target | Meaning |
-|--------|---------|
-| `projects` | All projects |
-| `projects:api` | Project named `"api"` (or group `"api"` if no exact match) |
-| `projects:libs` | All projects in the `"libs"` group |
-| `projects:libs:utils` | Project `"libs:utils"` |
-| `services` | All services |
-| `services:db` | All services in the `"db"` group |
-| `services:db:primary` | Service `"db:primary"` |
+| Target under `localbox projects …` | Meaning |
+|------------------------------------|---------|
+| *(none)* | All projects |
+| `api` | Ungrouped project `"api"` (or whole group `"api"` if no exact match) |
+| `libs` | All projects in the `"libs"` group |
+| `libs:utils` | Project `"libs:utils"` |
 
-Multiple targets are accepted by most commands:
+| Target under `localbox services …` | Meaning |
+|------------------------------------|---------|
+| *(none)* | All services |
+| `db` | All services in the `"db"` group |
+| `db:primary` | Service `"db:primary"` |
+
+Multiple targets are accepted by most commands (union, deduplicated):
 ```bash
-localbox clone projects:libs projects:backend
-localbox build projects:libs:utils projects:backend:app
+localbox projects clone libs backend
+localbox projects build libs:utils backend:app
 ```

@@ -66,7 +66,7 @@ frontend = Service(
 ## assets/dockerfiles/frontend/Dockerfile
 
 ```dockerfile
-# Build stage — runs npm ci && npm run build (via localbox build services)
+# Build stage — runs npm ci && npm run build (via localbox services build)
 # The "ui" build context comes from localbox --build-context ui=.build/projects/ui
 
 FROM nginx:alpine
@@ -111,9 +111,9 @@ server {
 ## Commands
 
 ```bash
-localbox clone projects
-localbox build projects        # runs npm ci && npm run build inside Docker
-localbox build services        # builds the nginx image with dist/ copied in
+localbox projects clone
+localbox projects build        # runs npm ci && npm run build inside Docker
+localbox services build        # builds the nginx image with dist/ copied in
 localbox compose generate
 docker compose up -d
 ```

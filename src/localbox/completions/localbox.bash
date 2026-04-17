@@ -1,5 +1,6 @@
 # Bash completion for localbox
-# Handles colon-separated targets like projects:be:authserver
+# Domain-first grammar: localbox <domain> <command> [<group>[:<name>] …]
+# Handles colon-separated short-form targets like be:authserver.
 
 _localbox_completion() {
     local IFS=$'\n'
