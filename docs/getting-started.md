@@ -28,10 +28,10 @@ Requirements:
 
 ## Step 1 — Install Localbox
 
-Install the latest `v0.1` release (floating tag — always the newest patch on the v0.1 line):
+Install the latest `v0.2` release (floating tag — always the newest patch on the v0.2 line):
 
 ```bash
-pip install "git+https://github.com/nicolai-budico/localbox.git@v0.1"
+pip install "git+https://github.com/nicolai-budico/localbox.git@v0.2"
 ```
 
 Verify:
@@ -42,7 +42,7 @@ localbox --version
 To update to the latest patch:
 
 ```bash
-pip install --upgrade "git+https://github.com/nicolai-budico/localbox.git@v0.1"
+pip install --upgrade "git+https://github.com/nicolai-budico/localbox.git@v0.2"
 ```
 
 ### Shell completion (optional)

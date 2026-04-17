@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 set -euox pipefail
 
-# Creates a release branch from v0.1, merges main, bumps the patch version,
-# and opens a PR into v0.1. Run from anywhere inside the repo.
+# Creates a release branch from $RELEASE_BRANCH (default: v0.2), merges main,
+# bumps the patch version, and opens a PR into $RELEASE_BRANCH. Run from
+# anywhere inside the repo.
 #
 # Requirements: git, gh (authenticated), python3
 
+# Override to target a different release line (e.g., RELEASE_BRANCH=v0.3).
+RELEASE_BRANCH="${RELEASE_BRANCH:-v0.2}"
+
 git fetch origin
 
-# Read current version from v0.1
-CURRENT=$(git show origin/v0.1:pyproject.toml | python3 -c "
+# Read current version from $RELEASE_BRANCH
+CURRENT=$(git show "origin/$RELEASE_BRANCH:pyproject.toml" | python3 -c "
 import re, sys
 m = re.search(r'^version\s*=\s*\"([^\"]+)\"', sys.stdin.read(), re.MULTILINE)
 print(m.group(1))
@@ -38,8 +42,25 @@ if git show-ref --verify --quiet "refs/heads/$BRANCH"; then
   exit 1
 fi
 
-git checkout -b "$BRANCH" origin/v0.1
+git checkout -b "$BRANCH" "origin/$RELEASE_BRANCH"
 git merge --no-commit --no-ff origin/main
+
+# Resolve the expected pyproject.toml conflict deterministically: take main's
+# side so dependency additions and tool config survive; the sed below then
+# re-sets the version line to $NEXT. Any other unmerged path is a real
+# conflict and must be resolved manually.
+UNMERGED="$(git ls-files -u | awk '{print $4}' | sort -u)"
+if [ -n "$UNMERGED" ]; then
+  OTHER="$(printf '%s\n' "$UNMERGED" | grep -v '^pyproject\.toml$' || true)"
+  if [ -n "$OTHER" ]; then
+    echo "Error: unexpected merge conflict(s) in:" >&2
+    printf '  %s\n' $OTHER >&2
+    echo "Resolve manually, then rerun the script." >&2
+    exit 1
+  fi
+  git checkout --theirs -- pyproject.toml
+fi
+
 sed -i "s/^version = \".*\"/version = \"$NEXT\"/" pyproject.toml
 git add pyproject.toml
 git commit -m "Release $NEXT"
@@ -48,7 +69,7 @@ git push origin "$BRANCH"
 PR_URL=$(gh pr create \
   --title "Release $NEXT" \
   --body "Automated release PR for v$NEXT" \
-  --base v0.1 \
+  --base "$RELEASE_BRANCH" \
   --head "$BRANCH")
 
 PR_NUMBER=$(basename "$PR_URL")

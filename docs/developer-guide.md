@@ -76,22 +76,24 @@ Tests live in `tests/` and mirror the source structure.
 ## Branch Model
 
 ```
-main          ──A──B──C──D──────────────────────── (development, never gets version bumps)
+main          ──A──B──C──D──────────────────────── (version = "0.0.0-dev")
                             \
-release-0.1.X               ──[merge + bump]──┐
-                                               ↓
-v0.1          ──[prev]─────────────────[merge PR]  ← tag v0.1.X
+release-0.2.X               ──[merge + resolve + bump]──┐
+                                                         ↓
+v0.2          ──[prev]───────────────────────────[merge PR]  ← tag v0.2.X
 ```
 
-- **`main`** — development branch. Feature branches are rebased and merged here with `--no-ff`.
-- **`v0.1`** — stable release branch. Only advances via release PRs. This is what users install from.
+- **`main`** — development branch. Feature branches are rebased and merged here with `--no-ff`. Carries a `0.0.0-dev` sentinel in `pyproject.toml`; the release script resolves the resulting conflict deterministically.
+- **`v0.2`** — active stable release branch. Only advances via release PRs. This is what users install from.
 - **`release-X.Y.Z`** — short-lived branch created during the release process.
+- **`v0.1`** — archived. Not wired into CI, no longer receives patches. Existing `@v0.1` install URLs still resolve.
+- **`RELEASE_BRANCH`** — env var (default: `v0.2`) that the release scripts consult, so a future `v0.3` line is a one-env-var override.
 
 ---
 
 ## CI
 
-CI runs on every push to `main` and on PRs targeting `main` or `v0.1`. It has three jobs:
+CI runs on every push to `main` and on PRs targeting `main`. It has three jobs:
 
 | Job | What it does |
 |-----|--------------|
@@ -134,10 +136,10 @@ Run from anywhere inside the repo:
 ```
 
 The script will:
-1. Fetch origin, read the current version from `v0.1`, compute the next patch version
-2. Create a `release-<next>` branch from `v0.1`
-3. Merge `main` into the release branch (no-commit), bump version in `pyproject.toml`, commit
-4. Push the branch and open a PR: `release-<next>` → `v0.1`
+1. Fetch origin, read the current version from `v0.2` (or `$RELEASE_BRANCH`), compute the next patch version
+2. Create a `release-<next>` branch from `v0.2`
+3. Merge `main` into the release branch (no-commit), resolve the expected `pyproject.toml` conflict by taking `main`'s side, bump version, commit
+4. Push the branch and open a PR: `release-<next>` → `v0.2`
 5. Wait for CI to pass
 
 Alternatively, trigger the **Release Prepare** workflow from the GitHub Actions UI — it does the same thing.
@@ -152,9 +154,9 @@ gh pr merge --merge
 
 ### Step 3 — Automatic tagging and release
 
-When the PR merges into `v0.1`, the **Release Create** workflow fires automatically:
+When the PR merges into `v0.2`, the **Release Create** workflow fires automatically:
 - Reads the version from `pyproject.toml`
-- Creates an annotated tag (`v0.1.X`) on the merge commit
+- Creates an annotated tag (`v0.2.X`) on the merge commit
 - Publishes a GitHub Release with auto-generated notes
 
 Monitor the workflow:
@@ -168,12 +170,12 @@ gh run watch
 
 ```bash
 # Check the tag exists
-git fetch --tags && git tag -l "v0.1.*" | tail -5
+git fetch --tags && git tag -l "v0.2.*" | tail -5
 
 # Check GitHub release
 gh release list --limit=5
 
 # Test installation
-pip install --upgrade "git+https://github.com/nicolai-budico/localbox.git@v0.1"
+pip install --upgrade "git+https://github.com/nicolai-budico/localbox.git@v0.2"
 localbox --version
 ```
