@@ -3,12 +3,13 @@ set -euo pipefail
 
 # Full release cycle in one shot:
 #   1. Prepare   — delegates to ./scripts/create-release-pr.sh (creates the
-#                  release-<next> branch, pushes, opens a PR into v0.1, and
-#                  blocks on CI via `gh pr checks --watch`).
+#                  release-<next> branch, pushes, opens a PR into
+#                  $RELEASE_BRANCH, and blocks on CI via
+#                  `gh pr checks --watch`).
 #   2. Merge     — `gh pr merge --merge --delete-branch` on the release PR.
 #                  The `--merge` strategy is required so the signed merge
-#                  commit on v0.1 is the artifact that release-create.yml
-#                  tags.
+#                  commit on $RELEASE_BRANCH is the artifact that
+#                  release-create.yml tags.
 #   3. Wait      — polls for the release-create.yml workflow run whose
 #                  headSha equals the PR's merge commit, then `gh run watch`
 #                  until it succeeds.
@@ -24,6 +25,10 @@ set -euo pipefail
 # Requirements: git, gh (authenticated), python3.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Override to target a different release line (e.g., RELEASE_BRANCH=v0.3).
+# Must match the default used by create-release-pr.sh.
+RELEASE_BRANCH="${RELEASE_BRANCH:-v0.2}"
 
 # --- 1. Prepare -------------------------------------------------------------
 
@@ -44,9 +49,9 @@ echo ""
 
 # --- 2. Locate the release PR ----------------------------------------------
 
-PR_NUMBER="$(gh pr list --head "$BRANCH" --base v0.1 --json number --jq '.[0].number // empty')"
+PR_NUMBER="$(gh pr list --head "$BRANCH" --base "$RELEASE_BRANCH" --json number --jq '.[0].number // empty')"
 if [ -z "$PR_NUMBER" ]; then
-  echo "Error: could not find an open PR with head '$BRANCH' into v0.1." >&2
+  echo "Error: could not find an open PR with head '$BRANCH' into $RELEASE_BRANCH." >&2
   echo "       Check the PR state on GitHub before re-running this script." >&2
   exit 1
 fi

@@ -34,7 +34,7 @@ jobs:
 
 - **Document `SpringBootService`** — add a library section alongside `TomcatService`. Currently users
   write Dockerfiles by hand not knowing auto-generation exists.
-- **Add `CHANGELOG.md`** with a v0.1.0 entry (Keep a Changelog format).
+- **Add `CHANGELOG.md`** with entries back to v0.1.0 (archived line) and v0.2.0 (current) in Keep a Changelog format.
 
 ---
 
