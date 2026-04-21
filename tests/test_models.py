@@ -6,6 +6,10 @@ from localbox.models.builder import (
     BindVolume,
     Builder,
     CacheVolume,
+    GradleBuilder,
+    GradleWrapperBuilder,
+    MavenBuilder,
+    MavenWrapperBuilder,
     NamedVolume,
     bind_volume,
     cache_volume,
@@ -272,6 +276,104 @@ class TestBuilder:
         names = [v.name for v in b.volumes]
         assert "gradle" in names
         assert "maven" in names
+
+
+class TestGradleTasks:
+    """Tests for the `tasks` field on Gradle builders."""
+
+    GRADLE_DEFAULT = [
+        "gradle",
+        "build",
+        "-x",
+        "test",
+        "--no-daemon",
+        "-Dmaven.repo.local=/var/maven/.m2/repository",
+    ]
+    GRADLEW_DEFAULT = [
+        "./gradlew",
+        "build",
+        "-x",
+        "test",
+        "--no-daemon",
+        "-Dmaven.repo.local=/var/maven/.m2/repository",
+    ]
+
+    # 2.1
+    def test_gradle_no_tasks_preserves_default(self):
+        b = GradleBuilder()
+        assert b.build_command_list == self.GRADLE_DEFAULT
+
+    # 2.2
+    def test_gradlew_no_tasks_preserves_default(self):
+        b = GradleWrapperBuilder()
+        assert b.build_command_list == self.GRADLEW_DEFAULT
+
+    # 2.3
+    def test_gradle_tasks_appended_after_defaults(self):
+        b = GradleBuilder(tasks=["publishToMavenLocal"])
+        assert b.build_command_list == self.GRADLE_DEFAULT + ["publishToMavenLocal"]
+
+    # 2.4
+    def test_gradlew_multiple_tasks_in_order(self):
+        b = GradleWrapperBuilder(tasks=["publishToMavenLocal", ":app:assemble"])
+        assert b.build_command_list == self.GRADLEW_DEFAULT + [
+            "publishToMavenLocal",
+            ":app:assemble",
+        ]
+
+    # 2.5
+    def test_tasks_accepts_flag_shaped_items_verbatim(self):
+        b = GradleBuilder(tasks=["publishToMavenLocal", "-PreleaseVersion=1.2.3"])
+        assert b.build_command_list is not None
+        assert b.build_command_list[-2:] == [
+            "publishToMavenLocal",
+            "-PreleaseVersion=1.2.3",
+        ]
+
+    # 2.6
+    def test_gradle_factory_passes_tasks(self):
+        b = gradle(tasks=["publishToMavenLocal"])
+        assert isinstance(b, GradleBuilder)
+        assert b.build_command_list == self.GRADLE_DEFAULT + ["publishToMavenLocal"]
+
+    # 2.7
+    def test_gradlew_factory_passes_tasks(self):
+        b = gradlew(tasks=["publishToMavenLocal"])
+        assert isinstance(b, GradleWrapperBuilder)
+        assert b.build_command_list == self.GRADLEW_DEFAULT + ["publishToMavenLocal"]
+
+    # 2.8
+    def test_tasks_plus_build_command_list_raises(self):
+        with pytest.raises(ValueError, match="tasks") as exc:
+            GradleBuilder(tasks=["x"], build_command_list=["gradle", "y"])
+        assert "build_command_list" in str(exc.value)
+
+    # 2.9
+    def test_tasks_plus_build_command_raises(self):
+        with pytest.raises(ValueError, match="build_command"):
+            GradleWrapperBuilder(tasks=["x"], build_command="./gradlew y")
+
+    # 2.10
+    def test_tasks_plus_build_script_raises(self):
+        with pytest.raises(ValueError, match="build_script"):
+            GradleBuilder(tasks=["x"], build_script="b.sh")
+
+    # 2.11
+    def test_tasks_plus_deprecated_command_list_raises(self):
+        # Deprecated alias migration runs first; conflict check then catches it.
+        with pytest.warns(DeprecationWarning):
+            with pytest.raises(ValueError, match="build_command_list"):
+                GradleBuilder(tasks=["x"], command_list=["gradle", "y"])
+
+    # 2.12
+    def test_maven_builder_rejects_tasks(self):
+        with pytest.raises(ValueError, match="Gradle-only"):
+            MavenBuilder(tasks=["site"])
+
+    # 2.13
+    def test_maven_wrapper_builder_rejects_tasks(self):
+        with pytest.raises(ValueError, match="Gradle-only"):
+            MavenWrapperBuilder(tasks=["site"])
 
 
 class TestProject:

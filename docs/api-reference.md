@@ -451,6 +451,25 @@ Auto-configured defaults when using `gradle()`:
 
 Artifacts found in `build/libs/*.jar` (excluding `-plain`, `-sources`, `-javadoc`, `original-` variants).
 
+### Appending extra Gradle tasks (`tasks=`)
+
+`GradleBuilder` and `GradleWrapperBuilder` accept an optional `tasks: list[str] | None` field that appends extra tasks/args to the default Gradle command — useful when a Gradle module needs to publish libraries into the shared `.build/maven/.m2` cache so downstream Maven projects can consume them.
+
+```python
+# gradle build -x test --no-daemon -Dmaven.repo.local=… publishToMavenLocal
+sdk = JavaProject(
+    "backend:sdk",
+    repo="git@github.com:org/sdk.git",
+    jdk=21,
+    builder=gradle(tasks=["publishToMavenLocal"]),
+)
+```
+
+- Items are appended to the default command verbatim — flag-shaped items like `-PreleaseVersion=1.2.3` work too.
+- `tasks` is mutually exclusive with `build_command` / `build_command_list` / `build_script` (and their deprecated aliases). Passing both raises `ValueError`.
+- Maven builders (`maven()`, `mavenw()`) reject `tasks` with `ValueError` — the field is Gradle-only.
+- Caveat: the default command's `-x test` still wins, so `tasks=["test"]` will not actually run tests. Use a custom `build_command_list` for that.
+
 ---
 
 ## MavenWrapperBuilder / GradleWrapperBuilder
@@ -459,10 +478,10 @@ Wrapper builders run `./mvnw` / `./gradlew` on a plain JDK image (no Maven or Gr
 
 ```python
 def mavenw() -> MavenWrapperBuilder
-def gradlew() -> GradleWrapperBuilder
+def gradlew(*, tasks: list[str] | None = None) -> GradleWrapperBuilder
 ```
 
-Use when the project ships its own wrapper scripts (`mvnw` / `gradlew` in the repository root).
+Use when the project ships its own wrapper scripts (`mvnw` / `gradlew` in the repository root). `gradlew()` accepts the same `tasks=` field as `gradle()` — see above.
 
 ---
 
@@ -536,10 +555,10 @@ Creates a Maven builder. JDK is specified on the `JavaProject`, not here.
 ### gradle
 
 ```python
-def gradle(version: str = "8.14") -> GradleBuilder
+def gradle(version: str = "8.14", *, tasks: list[str] | None = None) -> GradleBuilder
 ```
 
-Creates a Gradle builder. JDK is specified on the `JavaProject`, not here.
+Creates a Gradle builder. JDK is specified on the `JavaProject`, not here. The optional `tasks` keyword appends extra Gradle tasks/args to the default build command (see [GradleBuilder defaults](#gradlebuilder)).
 
 ### mavenw
 
@@ -552,10 +571,10 @@ Creates a Maven wrapper builder. Runs `./mvnw` on a plain JDK image. JDK is spec
 ### gradlew
 
 ```python
-def gradlew() -> GradleWrapperBuilder
+def gradlew(*, tasks: list[str] | None = None) -> GradleWrapperBuilder
 ```
 
-Creates a Gradle wrapper builder. Runs `./gradlew` on a plain JDK image. JDK is specified on the `JavaProject`.
+Creates a Gradle wrapper builder. Runs `./gradlew` on a plain JDK image. JDK is specified on the `JavaProject`. Accepts the same `tasks=` keyword as `gradle()`.
 
 ### node
 
