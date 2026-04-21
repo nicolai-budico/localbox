@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **`tasks=` field on Gradle builders** — `GradleBuilder`, `GradleWrapperBuilder`, `gradle()`, and `gradlew()` now accept an optional `tasks: list[str] | None` keyword that appends extra Gradle tasks/args to the default build command. Designed for the common case of running `publishToMavenLocal` so a Gradle module's libraries land in the shared `.build/maven/.m2` cache for downstream Maven projects to consume. Items are passed verbatim, so flags like `-PreleaseVersion=1.2.3` also work. Mutually exclusive with custom `build_command*`; rejected on Maven builders. See `docs/cookbook/multi-module-maven.md` for the Gradle-libs → Maven-apps recipe.
+
 ## [0.2.0] - 2026-04-17
 
 ### BREAKING: CLI restructured to `localbox <domain> <command>`
