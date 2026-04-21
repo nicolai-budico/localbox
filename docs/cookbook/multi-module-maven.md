@@ -145,24 +145,52 @@ monorepo = JavaProject(
 
 ### Mixed Maven + Gradle
 
-If some libraries use Maven and some apps use Gradle, set a different builder per project. The shared Maven cache (`.build/maven/`) ensures that Maven-published artifacts are available to Gradle's Maven Local resolution:
+The `.build/maven/.m2` cache volume is shared by every Java builder in the solution (`maven()`, `gradle()`, `mavenw()`, `gradlew()`). Both `maven()` and `gradle()` are configured with `-Dmaven.repo.local=/var/maven/.m2/repository`, so artifacts written by one tool are visible to the other on the next build.
+
+#### Maven libs → Gradle app
+
+Maven's default `mvn install` writes to the local repo. No extra configuration needed — the Gradle app picks up the JARs via Maven Local resolution.
 
 ```python
 lib = JavaProject(
     "libs:commons",
     repo="git@github.com:org/commons.git",
     jdk=8,
-    builder=maven(),       # publishes to Maven local repo
+    builder=maven(),       # publishes to .build/maven/.m2/repository
 )
 
 app = JavaProject(
     "backend:app",
     repo="git@github.com:org/app.git",
     jdk=17,
-    builder=gradle(),      # reads from Maven local repo
+    builder=gradle(),      # reads from the same .m2/repository
     deps=[lib],
 )
 ```
+
+#### Gradle libs → Maven apps
+
+Gradle's default `gradle build` does **not** publish to Maven Local — it writes JARs to `build/libs/` only. To make a Gradle module's libraries available to downstream Maven projects, use the `tasks=` field on the Gradle builder to append `publishToMavenLocal` (the Gradle module must apply the `maven-publish` plugin):
+
+```python
+sdk = JavaProject(
+    "backend:sdk",
+    repo="git@github.com:org/sdk.git",     # Gradle multi-project
+    jdk=21,
+    builder=gradle(tasks=["publishToMavenLocal"]),
+    # → gradle build -x test --no-daemon -Dmaven.repo.local=… publishToMavenLocal
+)
+
+api = JavaProject(
+    "backend:api",
+    repo="git@github.com:org/api.git",     # Maven app that consumes sdk
+    jdk=21,
+    builder=maven(),
+    deps=[sdk],                            # built after sdk publishes
+)
+```
+
+This pattern works equally well for `gradlew()`. The same shared `.build/maven/.m2` cache means no copy-step is needed between builds.
 
 ### SNAPSHOT versions
 

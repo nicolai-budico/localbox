@@ -152,9 +152,41 @@ class JavaBuilder(Builder):
 
     Provides artifact detection and JDK-aware image resolution.
     JDK is specified on the JavaProject, not the builder.
+
+    The `tasks` field is consumed by Gradle subclasses only — Maven subclasses
+    raise ValueError if it is set.
     """
 
     version: str = ""  # Build tool version
+
+    # Gradle-only sugar: extra tasks/args appended to the default Gradle command.
+    # Items are passed verbatim, so flags like "-PreleaseVersion=1.2.3" also work.
+    # Mutually exclusive with build_command/build_command_list/build_script.
+    # Maven subclasses reject this field.
+    tasks: list[str] | None = None
+
+    def _validate_tasks_no_conflict(self) -> None:
+        """Raise if `tasks` is set together with a user-supplied build command.
+
+        Must be called AFTER super().__post_init__() so deprecated aliases
+        (command/command_list/script) are migrated into the modern names first.
+        """
+        if self.tasks is None:
+            return
+        conflicts = [
+            name
+            for name, val in (
+                ("build_command", self.build_command),
+                ("build_command_list", self.build_command_list),
+                ("build_script", self.build_script),
+            )
+            if val is not None
+        ]
+        if conflicts:
+            raise ValueError(
+                f"tasks cannot be combined with {', '.join(conflicts)} "
+                "(tasks is sugar over the default Gradle command)"
+            )
 
     def resolve_image_tag(self, jdk: JDK | None = None) -> str:
         """Resolve Docker image tag using provided JDK."""
@@ -190,6 +222,8 @@ class MavenBuilder(JavaBuilder):
     version: str = "3.9"
 
     def __post_init__(self) -> None:
+        if self.tasks is not None:
+            raise ValueError("tasks is Gradle-only; use build_command_list on Maven builders")
         # Set up volumes and command if not already set
         if not self.volumes:
             self.volumes = [
@@ -257,19 +291,25 @@ class GradleBuilder(JavaBuilder):
     Auto-detects packaging and filters out non-runnable JARs.
 
     Usage:
-        builder = gradle()  # Default version 8.14
-        builder = gradle("9.0")  # Custom version
+        builder = gradle()                                  # Default version 8.14
+        builder = gradle("9.0")                             # Custom version
+        builder = gradle(tasks=["publishToMavenLocal"])     # Append extra tasks
     """
 
     version: str = "8.14"
 
     def __post_init__(self) -> None:
-        # Set up volumes and command if not already set
+        # Set up volumes if not already set
         if not self.volumes:
             self.volumes = [
                 CacheVolume(name="gradle", container="/var/gradle"),
                 CacheVolume(name="maven", container="/var/maven/.m2"),
             ]
+        # Run parent first to migrate deprecated aliases into modern names
+        super().__post_init__()
+        # Then validate `tasks` against (now-migrated) modern command fields
+        self._validate_tasks_no_conflict()
+        # Apply defaults if no command was supplied by the user
         if not self.build_command_list and not self.build_command:
             self.build_command_list = [
                 "gradle",
@@ -290,7 +330,10 @@ class GradleBuilder(JavaBuilder):
                 "--no-daemon",
                 "-Dmaven.repo.local=/var/maven/.m2/repository",
             ]
-        super().__post_init__()
+        # Append tasks (validation above guarantees build_command_list is the default)
+        if self.tasks:
+            assert self.build_command_list is not None
+            self.build_command_list = list(self.build_command_list) + list(self.tasks)
 
     def resolve_image_tag(self, jdk: JDK | None = None) -> str:
         """Resolve Gradle Docker image tag using JDK."""
@@ -343,6 +386,8 @@ class MavenWrapperBuilder(JavaBuilder):
     """
 
     def __post_init__(self) -> None:
+        if self.tasks is not None:
+            raise ValueError("tasks is Gradle-only; use build_command_list on Maven builders")
         if not self.volumes:
             self.volumes = [CacheVolume(name="maven", container="/var/maven/.m2")]
         if not self.build_command_list and not self.build_command:
@@ -398,6 +443,7 @@ class GradleWrapperBuilder(JavaBuilder):
 
     Usage:
         builder = gradlew()
+        builder = gradlew(tasks=["publishToMavenLocal"])  # Append extra tasks
     """
 
     def __post_init__(self) -> None:
@@ -406,6 +452,11 @@ class GradleWrapperBuilder(JavaBuilder):
                 CacheVolume(name="gradle", container="/var/gradle"),
                 CacheVolume(name="maven", container="/var/maven/.m2"),
             ]
+        # Run parent first to migrate deprecated aliases into modern names
+        super().__post_init__()
+        # Then validate `tasks` against (now-migrated) modern command fields
+        self._validate_tasks_no_conflict()
+        # Apply defaults if no command was supplied by the user
         if not self.build_command_list and not self.build_command:
             self.build_command_list = [
                 "./gradlew",
@@ -421,7 +472,10 @@ class GradleWrapperBuilder(JavaBuilder):
             }
         if not self.clean_command_list and not self.clean_command:
             self.clean_command_list = ["./gradlew", "clean", "--no-daemon"]
-        super().__post_init__()
+        # Append tasks (validation above guarantees build_command_list is the default)
+        if self.tasks:
+            assert self.build_command_list is not None
+            self.build_command_list = list(self.build_command_list) + list(self.tasks)
 
     def resolve_image_tag(self, jdk: JDK | None = None) -> str:
         if jdk is None:
@@ -483,15 +537,20 @@ def maven(version: str = "3.9") -> MavenBuilder:
     return MavenBuilder(version=version)
 
 
-def gradle(version: str = "8.14") -> GradleBuilder:
+def gradle(version: str = "8.14", *, tasks: list[str] | None = None) -> GradleBuilder:
     """Create a Gradle builder.
 
     Args:
         version: Gradle version (e.g. "8.5", "8.14", "9.0")
+        tasks: Extra Gradle tasks/args appended to the default build command.
+            Items are passed verbatim (so flags like "-PreleaseVersion=1.2.3"
+            also work). Mutually exclusive with custom build_command*.
+            Note: `-x test` from the default still wins, so `tasks=["test"]`
+            will not actually run tests — use a custom build_command_list for that.
 
     JDK is specified on the JavaProject, not the builder.
     """
-    return GradleBuilder(version=version)
+    return GradleBuilder(version=version, tasks=tasks)
 
 
 def mavenw() -> MavenWrapperBuilder:
@@ -499,9 +558,17 @@ def mavenw() -> MavenWrapperBuilder:
     return MavenWrapperBuilder()
 
 
-def gradlew() -> GradleWrapperBuilder:
-    """Create a Gradle Wrapper builder (runs ./gradlew on a plain JDK image)."""
-    return GradleWrapperBuilder()
+def gradlew(*, tasks: list[str] | None = None) -> GradleWrapperBuilder:
+    """Create a Gradle Wrapper builder (runs ./gradlew on a plain JDK image).
+
+    Args:
+        tasks: Extra Gradle tasks/args appended to the default build command.
+            Items are passed verbatim (so flags like "-PreleaseVersion=1.2.3"
+            also work). Mutually exclusive with custom build_command*.
+            Note: `-x test` from the default still wins, so `tasks=["test"]`
+            will not actually run tests — use a custom build_command_list for that.
+    """
+    return GradleWrapperBuilder(tasks=tasks)
 
 
 def node(version: int = 20) -> Builder:

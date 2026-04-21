@@ -417,10 +417,11 @@ be_multi = TomcatService(
 | `maven()` | `maven:3.9-amazoncorretto-{jdk}` | `mvn install -Dmaven.test.skip=true` |
 | `maven("4.0")` | `maven:4.0-amazoncorretto-{jdk}` | `mvn install -Dmaven.test.skip=true` |
 | `gradle()` | `gradle:8.14-jdk{jdk}` | `gradle build -x test --no-daemon` |
+| `gradle(tasks=[…])` | `gradle:8.14-jdk{jdk}` | `gradle build -x test --no-daemon …extra tasks` |
 | `node(20)` | `node:20` | `npm ci && npm run build` |
 | `node(22)` | `node:22` | `npm ci && npm run build` |
 
-`{jdk}` is resolved from `JavaProject.jdk` at build time.
+`{jdk}` is resolved from `JavaProject.jdk` at build time. The `tasks=` keyword is also supported on `gradlew()`; use it to append tasks like `publishToMavenLocal` so Gradle modules feed the shared `.build/maven/.m2` cache for downstream Maven projects (see `docs/cookbook/multi-module-maven.md`).
 
 ### JDK Providers
 
