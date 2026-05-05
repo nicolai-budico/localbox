@@ -41,6 +41,7 @@ def build_service_image(
     service: Service,
     verbose: bool = False,
     no_cache: bool = False,
+    target_tag: str | None = None,
 ) -> bool:
     """Build or pull Docker image for a service."""
     try:
@@ -50,7 +51,9 @@ def build_service_image(
         if isinstance(service, _DockerfileService):
             contexts = service.build_contexts(solution)
             if contexts:
-                return _build_dockerfile_service(solution, service, contexts, verbose, no_cache)
+                return _build_dockerfile_service(
+                    solution, service, contexts, verbose, no_cache, target_tag=target_tag
+                )
 
         prepare_docker_image(
             solution,
@@ -59,6 +62,7 @@ def build_service_image(
             projects=service.all_projects,
             verbose=verbose,
             no_cache=no_cache,
+            target_tag=target_tag,
         )
         return True
     except Exception as e:
@@ -73,6 +77,7 @@ def _build_dockerfile_service(
     contexts: list[tuple[str, Path]],
     verbose: bool,
     no_cache: bool = False,
+    target_tag: str | None = None,
 ) -> bool:
     """Build a service image from a service-generated Dockerfile.
 
@@ -90,7 +95,8 @@ def _build_dockerfile_service(
         dockerfile_path = Path(tmpdir) / "Dockerfile"
         dockerfile_path.write_text(dockerfile_content)
 
-        target_tag = solution.service_image_tag(service.image.name)
+        if target_tag is None:
+            target_tag = solution.service_image_tag(service.image.name)
 
         cmd = [
             "docker",

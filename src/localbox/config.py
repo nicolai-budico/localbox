@@ -135,6 +135,21 @@ class Solution:
             return f"{self.registry}/{base}"
         return base
 
+    def service_remote_tag(self, image_name: str, tag: str, registry: str | None = None) -> str:
+        """Return the registry-qualified image tag for a specific version.
+
+        Uses the same path structure as service_image_tag but with a custom
+        tag instead of :latest. Registry falls back to solution.registry.
+
+        Without registry: {solution}/service/{image_name}:{tag}
+        With registry:    {registry}/{solution}/service/{image_name}:{tag}
+        """
+        effective_registry = registry or self.registry
+        base = f"{self.name}/service/{image_name}:{tag}"
+        if effective_registry:
+            return f"{effective_registry}/{base}"
+        return base
+
     def get_project(self, name: str) -> Project | None:
         """Get project by qualified name."""
         return self.projects.get(name)

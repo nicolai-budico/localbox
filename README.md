@@ -184,7 +184,7 @@ Load order: `solution.py` → `projects.py` → `services.py` → `projects/*.py
 
 ## CLI Reference
 
-The CLI is **domain-first**: `localbox <domain> <command> [targets…]`. Domains are `projects`, `services`, `compose`, `override`, and `solution`. Top-level utilities (`doctor`, `config`, `completion`, `prune`, `purge`) have no domain.
+The CLI is **domain-first**: `localbox <domain> <command> [targets…]`. Domains are `projects`, `services`, `compose`, `manifest`, `override`, and `solution`. Top-level utilities (`doctor`, `config`, `completion`, `prune`, `purge`) have no domain.
 
 ### Target Syntax
 
@@ -227,11 +227,20 @@ localbox projects clean                 # Run builder clean (mvn clean, gradle c
 localbox services list                  # List services (tree view)
 localbox services build                 # Build all service images
 localbox services build be              # Build one group
+localbox services build --manifest assembles/v1.json      # Build + apply registry tags from manifest
+localbox services push --manifest assembles/v1.json       # Push all images to registry
 
 # Docker Compose
-localbox compose generate               # Generate docker-compose.yml and .env
+localbox compose generate               # Generate docker-compose.yml (local image tags)
+localbox compose generate --manifest assembles/v1.json    # Generate with registry-qualified image refs
+localbox compose generate --tag v1 --registry reg.io/org  # Explicit tag and registry
 docker compose up -d                    # Start services (Docker manages lifecycle)
 docker compose down                     # Stop services
+
+# Manifests — CI/CD assemble snapshots
+localbox manifest generate --manifest assembles/v1.json --tag v1 --registry reg.io/org
+                                        # Record current repo HEAD SHAs + write tag/registry coords
+localbox projects switch --manifest assembles/v1.json     # Check out exact commits from manifest
 
 # Utilities (top-level — no domain)
 localbox doctor                         # Verify system requirements
@@ -407,6 +416,75 @@ be_multi = TomcatService(
     tomcat_version="9-jdk17",
 )
 ```
+
+---
+
+## Manifests — CI/CD Pipeline Integration
+
+A **manifest** is a JSON snapshot of a pipeline run. It records which exact Git commits were built and what registry/tag coordinates the images were published under, so any later step (or developer) can reproduce the environment precisely.
+
+### Manifest workflow
+
+```
+Step 1 — record state:
+  localbox manifest generate --manifest assembles/v1.json --tag v1 --registry reg.io/org
+  # writes: tag, registry, and repositories (project → commit SHA + remote URL)
+
+Step 2 — build + tag images:
+  localbox services build --manifest assembles/v1.json
+  # builds each service image directly as {registry}/{solution}/service/{name}:latest
+  # also tags it as {registry}/{solution}/service/{name}:v1
+
+Step 3 — push:
+  localbox services push --manifest assembles/v1.json
+  # docker push {registry}/{solution}/service/{name}:v1 for every service
+
+Step 4 — generate compose with registry-qualified image refs:
+  localbox compose generate --manifest assembles/v1.json
+  # writes docker-compose.yml using {registry}/{solution}/service/{name}:v1
+
+Step 5 — reproduce the exact environment (in any later pipeline run or on a developer's machine):
+  localbox projects switch --manifest assembles/v1.json
+  # git fetch + git checkout <commit> for every project listed in the manifest
+```
+
+### Manifest JSON format
+
+```json
+{
+  "tag":      "v1",
+  "registry": "501610556844.dkr.ecr.us-east-1.amazonaws.com",
+  "repositories": {
+    "api":    { "commit": "a3f1c9d...", "remote": "git@github.com:org/api.git" },
+    "worker": { "commit": "7b2e08a...", "remote": "git@github.com:org/worker.git" }
+  },
+  "extra": {
+    "pr_number": "142",
+    "run_id":    "10973214"
+  }
+}
+```
+
+Fields:
+- `tag` — Docker image tag used for all services in this assemble
+- `registry` — registry prefix; combined with solution name and service name: `{registry}/{solution}/service/{name}:{tag}`
+- `repositories` — one entry per project, keyed by `project.path_name`; written by `manifest generate`
+- `extra` (optional) — arbitrary string key-value pairs for pipeline metadata; passed via `--extra key=value`
+
+### `manifest generate` options
+
+```bash
+localbox manifest generate \
+  --manifest assembles/v1.json  \   # output path (parent directories created automatically)
+  --tag v1                      \   # required: the image tag
+  --registry reg.io/org         \   # optional: falls back to solution.config.registry
+  --extra pr_number=142         \   # optional, repeatable: pipeline metadata
+  --extra run_id=abc123
+```
+
+Hard errors:
+- Any project that has not been cloned → names all missing directories and exits non-zero without writing the file
+- No registry from `--registry` or `solution.config.registry` → exits non-zero
 
 ---
 

@@ -182,7 +182,12 @@ def _walk_env_refs(
             ) from exc
 
 
-def generate_compose_file(solution: Solution) -> Path:
+def generate_compose_file(
+    solution: Solution,
+    *,
+    image_tag: str | None = None,
+    registry: str | None = None,
+) -> Path:
     """
     Generate docker-compose.yml in solution root.
 
@@ -211,7 +216,9 @@ def generate_compose_file(solution: Solution) -> Path:
 
     for service in services:
         service_name = service.compose_name
-        service_def = generate_service_definition(solution, service, env_collector=env_vars)
+        service_def = generate_service_definition(
+            solution, service, env_collector=env_vars, image_tag=image_tag, registry=registry
+        )
         compose["services"][service_name] = service_def
 
         # Collect named volumes for top-level declaration
@@ -314,6 +321,8 @@ def generate_service_definition(
     solution: Solution,
     service: Service,
     env_collector: dict[str, str] | None = None,
+    image_tag: str | None = None,
+    registry: str | None = None,
 ) -> dict:
     """Generate docker-compose service definition."""
     # Base definition (no container_name to allow scaling)
@@ -344,14 +353,22 @@ def generate_service_definition(
     # Tag logic: f"{solution.name}/service/{service.image.name}:latest"
 
     if service.image.name:
-        service_def["image"] = solution.service_image_tag(service.image.name)
+        if image_tag:
+            service_def["image"] = solution.service_remote_tag(
+                service.image.name, image_tag, registry
+            )
+        else:
+            service_def["image"] = solution.service_image_tag(service.image.name)
     elif service.image.image:
         # Fallback if name not set (shouldn't happen with new validation)
         service_def["image"] = service.image.image
     else:
         # Fallback: derive tag the same way _finalize_image_name would
         image_name = (service.name or "").replace(":", "/")
-        service_def["image"] = solution.service_image_tag(image_name)
+        if image_tag:
+            service_def["image"] = solution.service_remote_tag(image_name, image_tag, registry)
+        else:
+            service_def["image"] = solution.service_image_tag(image_name)
 
     # Ports — wrap in _QuotedStr so PyYAML double-quotes each entry, which
     # silences Docker Compose's "unquoted port mapping" warning for strings
