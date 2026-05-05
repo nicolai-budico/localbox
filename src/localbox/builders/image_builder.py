@@ -24,6 +24,7 @@ def prepare_docker_image(
     tag_name: str | None = None,
     verbose: bool = False,
     no_cache: bool = False,
+    target_tag: str | None = None,
 ) -> str:
     """Prepare a Docker image (build or pull & tag).
 
@@ -34,17 +35,19 @@ def prepare_docker_image(
         projects: List of projects for build contexts
         tag_name: Override for image name in tag. If None, uses image.name.
         verbose: Enable verbose output
+        target_tag: Full tag override. If set, skips tag derivation entirely.
 
     Returns the local tag of the prepared image.
     """
     if projects is None:
         projects = []
 
-    name = tag_name or image.name
-    if image_type == "service":
-        target_tag = solution.service_image_tag(name)
-    else:
-        target_tag = f"{solution.name}/{image_type}/{name}:latest"
+    if target_tag is None:
+        name = tag_name or image.name
+        if image_type == "service":
+            target_tag = solution.service_image_tag(name)
+        else:
+            target_tag = f"{solution.name}/{image_type}/{name}:latest"
 
     if image.dockerfile:
         build_image(solution, image, target_tag, image_type, projects, verbose, no_cache)

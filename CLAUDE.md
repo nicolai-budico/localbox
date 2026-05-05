@@ -25,7 +25,8 @@ localbox/
 │   │   └── solution_config.py   # SolutionConfig
 │   ├── commands/
 │   │   ├── project.py           # clone, fetch, switch, build
-│   │   └── service.py           # build-image
+│   │   ├── service.py           # build-image, push
+│   │   └── manifest.py          # manifest generate
 │   ├── builders/
 │   │   ├── build.py             # Unified run_builder() for all project types
 │   │   ├── docker.py            # Service image building (build or pull)
@@ -107,9 +108,17 @@ localbox projects status                  # Show status
 
 localbox services list                    # List all services
 localbox services build db:primary        # Build one service image
+localbox services build --manifest assembles/v1.json   # Build + apply registry tags from manifest
+localbox services push --manifest assembles/v1.json    # Push all images to registry
 
-localbox compose generate                 # Generate docker-compose.yml
+localbox compose generate                 # Generate docker-compose.yml (local image tags)
+localbox compose generate --manifest assembles/v1.json # Generate with registry-qualified image refs
+localbox compose generate --tag v1 --registry reg.example.com  # Explicit coordinates
 docker compose up -d                      # Start all services (manage via docker directly)
+
+# Manifests (CI/CD assemble snapshots):
+localbox manifest generate --manifest assembles/v1.json --tag v1 --registry reg.example.com  # Record repo SHAs
+localbox projects switch --manifest assembles/v1.json              # Check out recorded commits
 
 # Scaffolding:
 localbox solution init                    # Create solution.py + assets/
@@ -179,7 +188,7 @@ Run all checks in this order:
 ruff format src/ tests/       # auto-format (must run before check)
 ruff check src/ tests/        # lint
 mypy src/localbox/            # type-check
-pytest tests/ -q              # tests (236 items, 3 skipped)
+pytest tests/ -q              # tests (269 passed, 3 skipped)
 ```
 All four must pass cleanly. CI will fail the release if any do not.
 

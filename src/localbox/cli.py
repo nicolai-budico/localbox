@@ -165,6 +165,12 @@ def solution() -> None:
     pass
 
 
+@cli.group()
+def manifest() -> None:
+    """Manage assemble manifests."""
+    pass
+
+
 # =============================================================================
 # Top-level utility commands
 # =============================================================================
@@ -605,10 +611,39 @@ def projects_fetch(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
 @projects.command("switch")
 @click.argument("targets", nargs=-1, shell_complete=complete_project_targets)
 @click.option("--branch", "-b", help="Branch to switch to (default: solution default)")
+@click.option(
+    "--manifest",
+    "manifest_path",
+    default=None,
+    type=click.Path(exists=True),
+    help="Manifest JSON: check out recorded SHAs (mutually exclusive with targets and -b)",
+)
 @pass_context
-def projects_switch(ctx: LocalboxContext, targets: tuple[str, ...], branch: str | None) -> None:
-    """Switch project branches."""
+def projects_switch(
+    ctx: LocalboxContext,
+    targets: tuple[str, ...],
+    branch: str | None,
+    manifest_path: str | None,
+) -> None:
+    """Switch project branches.
+
+    Examples:
+        localbox projects switch api -b feature-x
+        localbox projects switch --manifest assembles/v1.json
+    """
     sol = load_solution_or_exit()
+
+    if manifest_path and (targets or branch):
+        raise click.UsageError("--manifest cannot be combined with targets or -b")
+
+    if manifest_path:
+        import json
+
+        manifest = json.loads(Path(manifest_path).read_text())
+        from localbox.commands.project import switch_projects_from_manifest
+
+        switch_projects_from_manifest(sol, manifest, verbose=ctx.verbose)
+        return
 
     try:
         projs = resolve_targets(sol, targets, "projects")
@@ -737,14 +772,26 @@ def services_list() -> None:
 @services.command("build")
 @click.argument("targets", nargs=-1, shell_complete=complete_service_targets)
 @click.option("--no-cache", is_flag=True, help="Build without Docker layer cache")
+@click.option(
+    "--manifest",
+    "manifest_path",
+    default=None,
+    type=click.Path(exists=True),
+    help="Manifest JSON: apply remote tags and record image digests",
+)
 @pass_context
-def services_build(ctx: LocalboxContext, targets: tuple[str, ...], no_cache: bool) -> None:
+def services_build(
+    ctx: LocalboxContext,
+    targets: tuple[str, ...],
+    no_cache: bool,
+    manifest_path: str | None,
+) -> None:
     """Build service Docker images.
 
     Examples:
-        localbox services build              # Build all service images
-        localbox services build db:primary   # Build one service image
-        localbox services build db cache     # Build two groups
+        localbox services build                              # Build all service images
+        localbox services build db:primary                  # Build one service image
+        localbox services build --manifest assembles/v1.json # Build and tag for registry
     """
     sol = load_solution_or_exit()
 
@@ -760,7 +807,37 @@ def services_build(ctx: LocalboxContext, targets: tuple[str, ...], no_cache: boo
 
     from localbox.commands.service import build_images
 
-    build_images(sol, svcs, verbose=ctx.verbose, no_cache=no_cache)
+    build_images(
+        sol,
+        svcs,
+        verbose=ctx.verbose,
+        no_cache=no_cache,
+        manifest_path=Path(manifest_path) if manifest_path else None,
+    )
+
+
+@services.command("push")
+@click.option(
+    "--manifest",
+    "manifest_path",
+    required=True,
+    type=click.Path(exists=True),
+    help="Manifest JSON providing registry and tag",
+)
+@pass_context
+def services_push(ctx: LocalboxContext, manifest_path: str) -> None:
+    """Push all service images to registry using manifest coordinates.
+
+    Requires docker login to have been performed by the caller.
+
+    Examples:
+        localbox services push --manifest assembles/v1.json
+    """
+    sol = load_solution_or_exit()
+
+    from localbox.commands.service import push_images
+
+    push_images(sol, Path(manifest_path), verbose=ctx.verbose)
 
 
 # =============================================================================
@@ -769,17 +846,133 @@ def services_build(ctx: LocalboxContext, targets: tuple[str, ...], no_cache: boo
 
 
 @compose.command("generate")
-def compose_generate() -> None:
-    """Generate docker-compose.yml from service definitions."""
+@click.option(
+    "--manifest",
+    "manifest_path",
+    default=None,
+    type=click.Path(exists=True),
+    help="Manifest JSON providing registry and tag for image refs",
+)
+@click.option(
+    "--tag", default=None, help="Image tag for registry-qualified image refs (use with --registry)"
+)
+@click.option(
+    "--registry",
+    default=None,
+    help="Registry prefix for image refs (falls back to solution.config.registry)",
+)
+def compose_generate(manifest_path: str | None, tag: str | None, registry: str | None) -> None:
+    """Generate docker-compose.yml from service definitions.
+
+    Examples:
+        localbox compose generate
+        localbox compose generate --manifest assembles/v1.json
+        localbox compose generate --tag v1 --registry reg.example.com
+    """
     sol = load_solution_or_exit()
+
+    if manifest_path and (tag or registry):
+        raise click.UsageError("--manifest cannot be combined with --tag or --registry")
+
+    resolved_tag: str | None = None
+    resolved_registry: str | None = None
+
+    if manifest_path:
+        import json as _json
+
+        m = _json.loads(Path(manifest_path).read_text())
+        resolved_tag = m["tag"]
+        resolved_registry = m["registry"]
+    elif tag:
+        resolved_tag = tag
+        resolved_registry = registry or sol.registry
+        if not resolved_registry:
+            raise click.UsageError(
+                "registry must be provided via --registry or solution.config.registry"
+            )
 
     from localbox.builders.compose import generate_compose_file
 
     try:
-        generate_compose_file(sol)
+        generate_compose_file(sol, image_tag=resolved_tag, registry=resolved_registry)
     except ValueError as e:
         console.print(f"[red]Error:[/red] {e}")
         sys.exit(1)
+
+
+# =============================================================================
+# manifest domain
+# =============================================================================
+
+
+class _ExtraParam(click.ParamType):
+    """Click param type that parses 'key=value' into a (key, value) tuple."""
+
+    name = "key=value"
+
+    def convert(
+        self, value: str, param: click.Parameter | None, ctx: click.Context | None
+    ) -> tuple[str, str]:
+        if "=" not in value:
+            self.fail(f"{value!r} is not in 'key=value' format", param, ctx)
+        k, _, v = value.partition("=")
+        return k, v
+
+
+@manifest.command("generate")
+@click.option(
+    "--manifest",
+    "manifest_path",
+    required=True,
+    type=click.Path(),
+    help="Path to write manifest JSON",
+)
+@click.option("--tag", required=True, help="Assemble tag (used as Docker image tag)")
+@click.option(
+    "--registry",
+    default=None,
+    help="Docker registry prefix (falls back to solution.config.registry)",
+)
+@click.option(
+    "--extra",
+    "extra_pairs",
+    multiple=True,
+    type=_ExtraParam(),
+    metavar="KEY=VALUE",
+    help="Extra key=value metadata (repeatable)",
+)
+@pass_context
+def manifest_generate(
+    ctx: LocalboxContext,
+    manifest_path: str,
+    tag: str,
+    registry: str | None,
+    extra_pairs: tuple[tuple[str, str], ...],
+) -> None:
+    """Generate a manifest recording current repo SHAs for all projects.
+
+    Examples:
+        localbox manifest generate --manifest assembles/v1.json --tag v1 --registry reg.example.com
+        localbox manifest generate --manifest out.json --tag v1 --extra pr_number=42
+    """
+    sol = load_solution_or_exit()
+
+    resolved_registry = registry or sol.registry
+    if not resolved_registry:
+        console.print(
+            "[red]Error:[/red] registry must be provided via --registry or solution.config.registry"
+        )
+        raise SystemExit(1)
+
+    from localbox.commands.manifest import generate_manifest
+
+    generate_manifest(
+        sol,
+        Path(manifest_path),
+        tag=tag,
+        registry=resolved_registry,
+        extra=dict(extra_pairs),
+    )
 
 
 # =============================================================================
