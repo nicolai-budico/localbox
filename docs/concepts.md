@@ -430,6 +430,92 @@ portal = TomcatService(
 
 ---
 
+## Manifests — pipeline snapshots
+
+A **manifest** is a JSON file that captures the exact state of a pipeline run:
+which Git commits are checked out and what registry coordinates the resulting
+images were published under. It is the handoff artifact between pipeline steps
+and the mechanism for reproducing a historical environment.
+
+### When to use manifests
+
+Manifests are designed for CI/CD pipelines, not everyday local development:
+
+| Step | Command | What it writes / reads |
+|------|---------|------------------------|
+| Generate snapshot | `manifest generate` | Writes `tag`, `registry`, `repositories` (commit SHAs) |
+| Build & tag | `services build --manifest` | Reads tag/registry; applies registry-qualified tags to images |
+| Push | `services push --manifest` | Reads tag/registry; `docker push` for all services |
+| Deploy compose | `compose generate --manifest` | Reads tag/registry; writes `docker-compose.yml` with exact image refs |
+| Reproduce locally | `projects switch --manifest` | Reads commit SHAs; checks out exact commits in every project |
+
+### Manifest format
+
+```json
+{
+  "tag":      "2026-05-04-1",
+  "registry": "501610556844.dkr.ecr.us-east-1.amazonaws.com",
+  "repositories": {
+    "api":    { "commit": "a3f1c9d...", "remote": "git@github.com:org/api.git" },
+    "worker": { "commit": "7b2e08a...", "remote": "git@github.com:org/worker.git" }
+  },
+  "extra": {
+    "pr_number": "142"
+  }
+}
+```
+
+- `repositories` is keyed by `project.path_name` — the filesystem identifier localbox uses for each project.
+- `tag` and `registry` together define the remote image ref pattern: `{registry}/{solution}/service/{name}:{tag}`.
+- `extra` is optional; use it for pipeline metadata (PR number, run ID, triggering branch).
+
+### Image ref pattern
+
+All manifest-aware commands derive image refs the same way:
+
+```
+{registry}/{solution.name}/service/{service.image.name}:{tag}
+```
+
+For example: `501610556844.dkr.ecr.us-east-1.amazonaws.com/myapp/service/api:2026-05-04-1`
+
+This pattern is identical whether the ref comes from `services build`, `services push`, or `compose generate` — so images built in CI can be pushed and then deployed without any manual coordination of coordinates.
+
+### `solution.config.registry` fallback
+
+`--registry` is optional for both `manifest generate` and `compose generate --tag`. When omitted, `solution.config.registry` is used. If neither is set the command exits with an error.
+
+```python
+# solution.py
+config = SolutionConfig(
+    name="myapp",
+    registry="501610556844.dkr.ecr.us-east-1.amazonaws.com",
+)
+```
+
+With this set, `--registry` can be omitted from CI commands.
+
+### Reproducibility
+
+To reproduce any historical pipeline run locally:
+
+```bash
+# 1. Get the manifest from the pipeline run (e.g. from an artifact store or git)
+# 2. Check out the exact commits
+localbox projects switch --manifest assembles/v1.json
+# 3. Build (uses local image tags, not registry)
+localbox projects build
+localbox services build
+# 4. Run
+localbox compose generate
+docker compose up -d
+```
+
+`projects switch --manifest` is a hard-error operation: if any key in `repositories` does
+not match a configured project, the command exits before touching any repository.
+
+---
+
 ## Plugin system
 
 Third-party tools can add CLI commands to Localbox by registering a `localbox.commands` entry point:

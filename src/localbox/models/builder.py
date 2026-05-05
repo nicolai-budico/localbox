@@ -305,6 +305,11 @@ class GradleBuilder(JavaBuilder):
                 CacheVolume(name="gradle", container="/var/gradle"),
                 CacheVolume(name="maven", container="/var/maven/.m2"),
             ]
+        if not self.environment:
+            self.environment = {
+                "GRADLE_USER_HOME": "/var/gradle",
+                "MAVEN_LOCAL_REPO": "/var/maven/.m2/repository",
+            }
         # Run parent first to migrate deprecated aliases into modern names
         super().__post_init__()
         # Then validate `tasks` against (now-migrated) modern command fields
@@ -319,10 +324,6 @@ class GradleBuilder(JavaBuilder):
                 "--no-daemon",
                 "-Dmaven.repo.local=/var/maven/.m2/repository",
             ]
-            self.environment = {
-                "GRADLE_USER_HOME": "/var/gradle",
-                "MAVEN_LOCAL_REPO": "/var/maven/.m2/repository",
-            }
         if not self.clean_command_list and not self.clean_command:
             self.clean_command_list = [
                 "gradle",
@@ -452,6 +453,11 @@ class GradleWrapperBuilder(JavaBuilder):
                 CacheVolume(name="gradle", container="/var/gradle"),
                 CacheVolume(name="maven", container="/var/maven/.m2"),
             ]
+        if not self.environment:
+            self.environment = {
+                "GRADLE_USER_HOME": "/var/gradle",
+                "MAVEN_LOCAL_REPO": "/var/maven/.m2/repository",
+            }
         # Run parent first to migrate deprecated aliases into modern names
         super().__post_init__()
         # Then validate `tasks` against (now-migrated) modern command fields
@@ -466,10 +472,6 @@ class GradleWrapperBuilder(JavaBuilder):
                 "--no-daemon",
                 "-Dmaven.repo.local=/var/maven/.m2/repository",
             ]
-            self.environment = {
-                "GRADLE_USER_HOME": "/var/gradle",
-                "MAVEN_LOCAL_REPO": "/var/maven/.m2/repository",
-            }
         if not self.clean_command_list and not self.clean_command:
             self.clean_command_list = ["./gradlew", "clean", "--no-daemon"]
         # Append tasks (validation above guarantees build_command_list is the default)

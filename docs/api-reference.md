@@ -576,6 +576,14 @@ def gradlew(*, tasks: list[str] | None = None) -> GradleWrapperBuilder
 
 Creates a Gradle wrapper builder. Runs `./gradlew` on a plain JDK image. JDK is specified on the `JavaProject`. Accepts the same `tasks=` keyword as `gradle()`.
 
+When `tasks` is provided, those tasks/flags are appended to the default `./gradlew build -x test --no-daemon` command. When `tasks` is `None` (default), only the default command runs. `tasks` is keyword-only and is mutually exclusive with `build_command` / `build_command_list`.
+
+```python
+gradlew()                                                     # default: ./gradlew build -x test --no-daemon
+gradlew(tasks=["publishToMavenLocal"])                        # appends publishToMavenLocal
+gradlew(tasks=["publishToMavenLocal", "build", "-x", "test"]) # multiple tasks/flags
+```
+
 ### node
 
 ```python

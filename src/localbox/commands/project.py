@@ -207,6 +207,59 @@ def switch_projects(
         _print_summary(results, "Switch Summary")
 
 
+def switch_projects_from_manifest(
+    solution: Solution,
+    manifest: dict[str, object],
+    verbose: bool = False,
+) -> None:
+    """Check out each project to the commit recorded in the manifest.
+
+    All manifest repo keys must match a configured project by path_name.
+    Fails before touching any repo if any key is unmatched.
+    """
+    repositories: dict[str, dict[str, str]] = manifest.get("repositories", {})  # type: ignore[assignment]
+    project_by_path: dict[str, Project] = {p.path_name: p for p in solution.projects.values()}
+
+    unmatched = [key for key in repositories if key not in project_by_path]
+    if unmatched:
+        for key in unmatched:
+            console.print(
+                f"[red]Error:[/red] manifest repo '{key}' does not match any configured project"
+            )
+        raise SystemExit(1)
+
+    results: list[tuple[str, str]] = []
+    for key, info in repositories.items():
+        project = project_by_path[key]
+        commit = info["commit"]
+        target_dir = project.resolve_source_dir(solution.directories.projects)
+
+        logger.info("switch {} → {}", project.path_name, commit)
+        console.print(f"[blue]Fetching[/blue] {project.path_name}...")
+        fetch_cmd = ["git", "-C", str(target_dir), "fetch", "--all"]
+        if verbose:
+            console.print(f"  $ {' '.join(fetch_cmd)}")
+        subprocess.run(fetch_cmd, capture_output=not verbose, check=True)
+
+        console.print(f"[blue]Checking out[/blue] {project.path_name} @ {commit[:12]}...")
+        checkout_cmd = ["git", "-C", str(target_dir), "checkout", commit]
+        if verbose:
+            console.print(f"  $ {' '.join(checkout_cmd)}")
+        result = subprocess.run(checkout_cmd, capture_output=not verbose)
+        if result.returncode != 0:
+            stderr = result.stderr.decode() if result.stderr else ""
+            console.print(f"[red]Failed[/red] to checkout {project.path_name}: {stderr}")
+            results.append((project.path_name, "failed"))
+        else:
+            console.print(f"[green]Checked out[/green] {project.path_name} @ {commit[:12]}")
+            results.append((project.path_name, "switched"))
+
+    if len(results) > 1 or any(s == "failed" for _, s in results):
+        _print_summary(results, "Switch Summary")
+    if any(s == "failed" for _, s in results):
+        raise SystemExit(1)
+
+
 def switch_project(
     solution: Solution,
     project: Project,
