@@ -503,9 +503,13 @@ To reproduce any historical pipeline run locally:
 # 1. Get the manifest from the pipeline run (e.g. from an artifact store or git)
 # 2. Check out the exact commits
 localbox projects switch --manifest assembles/v1.json
+# Add --force to discard any local modifications before each checkout:
+# localbox projects switch --manifest assembles/v1.json --force
 # 3. Build (uses local image tags, not registry)
-localbox projects build
+localbox projects build          # sequential
+localbox projects build -j 4     # parallel (4 workers per dependency tier)
 localbox services build
+localbox services build -j 4     # parallel (4 images at once)
 # 4. Run
 localbox compose generate
 docker compose up -d
@@ -513,6 +517,10 @@ docker compose up -d
 
 `projects switch --manifest` is a hard-error operation: if any key in `repositories` does
 not match a configured project, the command exits before touching any repository.
+
+`projects fetch --force` hard-resets each repo to `origin/<configured-branch>` via
+`git fetch --all && git reset --hard origin/<branch> && git clean -fd`. Use it on
+persistent hosts where prior runs may have left dirty working trees or detached HEADs.
 
 ---
 
