@@ -477,9 +477,27 @@ def build_projects(
 
 
 def _resolve_build_tiers(solution: Solution, projects: list[Project]) -> list[list[Project]]:
-    """Return projects grouped into dependency tiers (same tier = no interdependencies)."""
+    """Return projects grouped into dependency tiers (same tier = no interdependencies).
+
+    Transitive dependencies not in the original project list are pulled from the
+    solution and prepended to the build as earlier tiers.
+    """
+    # Expand to include transitive deps from solution that aren't in the requested list
+    expanded: dict[str, Project] = {p.name: p for p in projects if p.name}
+    queue = list(projects)
+    while queue:
+        p = queue.pop()
+        for dep in p.depends_on:
+            if dep.name and dep.name not in expanded:
+                sol_dep = solution.get_project(dep.name)
+                if sol_dep is not None:
+                    expanded[dep.name] = sol_dep
+                    queue.append(sol_dep)
+
+    all_projects = list(expanded.values())
+
     graph: dict[str, set[str]] = {}
-    for project in projects:
+    for project in all_projects:
         assert project.name is not None
         graph[project.name] = {d.name for d in project.depends_on if d.name is not None}
 
@@ -492,7 +510,7 @@ def _resolve_build_tiers(solution: Solution, projects: list[Project]) -> list[li
             f"Fix the dependency cycle in your project definitions."
         ) from e
 
-    name_to_project = {p.name: p for p in projects}
+    name_to_project = {p.name: p for p in all_projects}
     result: list[list[Project]] = []
     seen: set[str] = set()
     for tier_set in tier_sets:
@@ -566,7 +584,6 @@ def build_project(
         return "skipped", None
 
     logger.info("build {} (no_cache={})", project.name, no_cache)
-    console.print(f"[blue]Building[/blue] {project.name}...")
 
     from localbox.builders.build import run_builder
 
@@ -575,6 +592,9 @@ def build_project(
     log_name = project.path_name.replace(":", "-")
     log_path = logs_dir / f"{log_name}.log"
 
+    if verbose:
+        console.print(f"[blue]Building[/blue] {project.name}...")
+
     success = run_builder(
         solution, project, source_dir, verbose=verbose, no_cache=no_cache, log_path=log_path
     )
@@ -582,12 +602,14 @@ def build_project(
     if success:
         _write_last_build(source_dir)
         logger.info("build {} completed", project.name)
-        console.print(f"[green]Built[/green] {project.name}")
+        if verbose:
+            console.print(f"[green]Built[/green] {project.name}")
         return "built", log_path
     else:
         logger.error("build {} failed", project.name)
-        console.print(f"[red]Failed[/red] to build {project.name}")
-        console.print(f"[dim]  Log: {log_path}[/dim]")
+        if verbose:
+            console.print(f"[red]Failed[/red] to build {project.name}")
+            console.print(f"[dim]  Log: {log_path}[/dim]")
         return "failed", log_path
 
 
