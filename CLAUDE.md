@@ -102,12 +102,21 @@ cd solutions/myapp
 # Targets are short-form: <group>, <name>, or <group>:<name>
 localbox projects list                    # List all projects
 localbox projects clone libs:utils        # Clone single project
-localbox projects build                   # Build all projects
+localbox projects fetch                   # git pull --rebase (all)
+localbox projects fetch --force           # Hard-reset to origin/<branch>, discard local changes
+localbox projects build                   # Build all projects (sequential)
+localbox projects build -j 4              # Build up to 4 in parallel per dependency tier
+localbox projects build -j auto           # Parallel, workers = os.cpu_count()
 localbox projects build be:api fe:api workers   # Multiple short-form targets
+localbox projects switch -b feature/x     # Switch branch (all projects)
+localbox projects switch -b feature/x --force   # Clean working tree before checkout
+localbox projects switch --manifest assembles/v1.json              # Check out recorded commits
+localbox projects switch --manifest assembles/v1.json --force      # Clean before each SHA checkout
 localbox projects status                  # Show status
 
 localbox services list                    # List all services
 localbox services build db:primary        # Build one service image
+localbox services build -j 4             # Build up to 4 images in parallel
 localbox services build --manifest assembles/v1.json   # Build + apply registry tags from manifest
 localbox services push --manifest assembles/v1.json    # Push all images to registry
 
@@ -118,7 +127,6 @@ docker compose up -d                      # Start all services (manage via docke
 
 # Manifests (CI/CD assemble snapshots):
 localbox manifest generate --manifest assembles/v1.json --tag v1 --registry reg.example.com  # Record repo SHAs
-localbox projects switch --manifest assembles/v1.json              # Check out recorded commits
 
 # Scaffolding:
 localbox solution init                    # Create solution.py + assets/

@@ -558,7 +558,7 @@ class TestComposeEnvResolution:
             APP_CMD_ARG: str = env_field()
 
         env_inst = Env(
-            MAIN_DB_HOST="main-db.viveka.localtest.me",
+            MAIN_DB_HOST="db.localtest.me",
             MAIN_DB_PORT="5432",
             APP_CMD_ARG="--verbose",
         )
@@ -587,7 +587,7 @@ class TestComposeEnvResolution:
         assert "${APP_CMD_ARG}" in compose_text
 
         env_text = (tmp_path / ".env").read_text()
-        assert 'MAIN_DB_HOST="main-db.viveka.localtest.me"' in env_text
+        assert 'MAIN_DB_HOST="db.localtest.me"' in env_text
         assert 'MAIN_DB_PORT="5432"' in env_text
         assert 'APP_CMD_ARG="--verbose"' in env_text
 
