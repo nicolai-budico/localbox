@@ -94,7 +94,10 @@ def _run_docker_with_cleanup(
         process.terminate()
         raise KeyboardInterrupt()
 
-    old_handler = signal.signal(signal.SIGINT, cleanup)
+    # signal.signal() only works in the main thread; skip when called from a worker thread
+    in_main_thread = threading.current_thread() is threading.main_thread()
+    if in_main_thread:
+        old_handler = signal.signal(signal.SIGINT, cleanup)
     timeout_seconds = timeout_minutes * 60 if timeout_minutes is not None else None
 
     try:
@@ -112,7 +115,8 @@ def _run_docker_with_cleanup(
     finally:
         if log_file:
             log_file.close()
-        signal.signal(signal.SIGINT, old_handler)
+        if in_main_thread:
+            signal.signal(signal.SIGINT, old_handler)
 
 
 def run_builder(

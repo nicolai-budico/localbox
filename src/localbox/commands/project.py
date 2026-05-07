@@ -1,6 +1,7 @@
 """Project commands implementation."""
 
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Union
@@ -8,7 +9,7 @@ from typing import TYPE_CHECKING, Union
 from loguru import logger
 from rich.console import Console
 from rich.table import Table
-from toposort import CircularDependencyError, toposort_flatten
+from toposort import CircularDependencyError, toposort, toposort_flatten
 
 from localbox.config import Solution
 from localbox.models.project import Project
@@ -145,6 +146,7 @@ def fetch_projects(
     solution: Solution,
     projects: list[Union[Project, "Service"]],
     verbose: bool = False,
+    force: bool = False,
 ) -> None:
     """Fetch (git pull) project repositories."""
     results: list[tuple[str, str]] = []
@@ -152,13 +154,15 @@ def fetch_projects(
         if not isinstance(project, Project):
             continue
 
-        status = fetch_project(solution, project, verbose=verbose)
+        status = fetch_project(solution, project, verbose=verbose, force=force)
         results.append((project.name or "", status))
     if len(results) > 1 or any(s == "failed" for _, s in results):
         _print_summary(results, "Fetch Summary")
 
 
-def fetch_project(solution: Solution, project: Project, verbose: bool = False) -> str:
+def fetch_project(
+    solution: Solution, project: Project, verbose: bool = False, force: bool = False
+) -> str:
     """Fetch a single project repository."""
     target_dir = project.resolve_source_dir(solution.directories.projects)
 
@@ -167,8 +171,31 @@ def fetch_project(solution: Solution, project: Project, verbose: bool = False) -
         console.print(f"[yellow]Skip[/yellow] {project.name} (not cloned)")
         return "skipped"
 
-    logger.info("fetch {}", project.name)
+    logger.info("fetch {} (force={})", project.name, force)
     console.print(f"[blue]Fetching[/blue] {project.name}...")
+
+    if force:
+        branch = (project.git.branch if project.git else None) or solution.default_branch
+        cmds = [
+            ["git", "-C", str(target_dir), "fetch", "--all"],
+            ["git", "-C", str(target_dir), "reset", "--hard", f"origin/{branch}"],
+            ["git", "-C", str(target_dir), "clean", "-fd"],
+        ]
+        for cmd in cmds:
+            logger.debug("$ {}", " ".join(cmd))
+            if verbose:
+                console.print(f"  $ {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=not verbose)
+            if result.returncode != 0:
+                stderr = result.stderr.decode() if result.stderr else ""
+                logger.error("fetch --force {} failed: {}", project.name, stderr)
+                console.print(f"[red]Failed[/red] to force-fetch {project.name}")
+                if not verbose and stderr:
+                    console.print(stderr)
+                return "failed"
+        logger.info("fetch {} completed (force)", project.name)
+        console.print(f"[green]Fetched[/green] {project.name}")
+        return "fetched"
 
     cmd = ["git", "-C", str(target_dir), "pull", "--rebase"]
     logger.debug("$ {}", " ".join(cmd))
@@ -189,11 +216,24 @@ def fetch_project(solution: Solution, project: Project, verbose: bool = False) -
     return "fetched"
 
 
+def _clean_working_tree(target_dir: Path, verbose: bool = False) -> None:
+    """Discard all local modifications and untracked files."""
+    for cmd in [
+        ["git", "-C", str(target_dir), "reset", "--hard", "HEAD"],
+        ["git", "-C", str(target_dir), "clean", "-fd"],
+    ]:
+        logger.debug("$ {}", " ".join(cmd))
+        if verbose:
+            console.print(f"  $ {' '.join(cmd)}")
+        subprocess.check_call(cmd)
+
+
 def switch_projects(
     solution: Solution,
     projects: list[Union[Project, "Service"]],
     branch: str | None = None,
     verbose: bool = False,
+    force: bool = False,
 ) -> None:
     """Switch branches for projects."""
     results: list[tuple[str, str]] = []
@@ -201,7 +241,7 @@ def switch_projects(
         if not isinstance(project, Project):
             continue
 
-        status = switch_project(solution, project, branch=branch, verbose=verbose)
+        status = switch_project(solution, project, branch=branch, verbose=verbose, force=force)
         results.append((project.name or "", status))
     if len(results) > 1 or any(s == "failed" for _, s in results):
         _print_summary(results, "Switch Summary")
@@ -211,6 +251,7 @@ def switch_projects_from_manifest(
     solution: Solution,
     manifest: dict[str, object],
     verbose: bool = False,
+    force: bool = False,
 ) -> None:
     """Check out each project to the commit recorded in the manifest.
 
@@ -241,6 +282,9 @@ def switch_projects_from_manifest(
             console.print(f"  $ {' '.join(fetch_cmd)}")
         subprocess.run(fetch_cmd, capture_output=not verbose, check=True)
 
+        if force:
+            _clean_working_tree(target_dir, verbose=verbose)
+
         console.print(f"[blue]Checking out[/blue] {project.path_name} @ {commit[:12]}...")
         checkout_cmd = ["git", "-C", str(target_dir), "checkout", commit]
         if verbose:
@@ -265,6 +309,7 @@ def switch_project(
     project: Project,
     branch: str | None = None,
     verbose: bool = False,
+    force: bool = False,
 ) -> str:
     """Switch branch for a single project."""
     target_dir = project.resolve_source_dir(solution.directories.projects)
@@ -278,6 +323,9 @@ def switch_project(
         logger.error("switch {}: no git configuration", project.name)
         console.print(f"[red]Error:[/red] Project {project.name} has no git configuration")
         return "failed"
+
+    if force:
+        _clean_working_tree(target_dir, verbose=verbose)
 
     target_branch = branch or project.git.branch or solution.default_branch
     logger.info("switch {} → {}", project.name, target_branch)
@@ -381,29 +429,83 @@ def build_projects(
     verbose: bool = False,
     no_cache: bool = False,
     keep_going: bool = False,
+    jobs: int = 1,
 ) -> None:
-    """Build projects in dependency order."""
-    # Filter to actual projects
+    """Build projects in dependency order, optionally in parallel within each tier."""
     project_list = [p for p in projects if isinstance(p, Project)]
 
-    # Build dependency graph
     try:
-        ordered = resolve_build_order(solution, project_list)
+        tiers = _resolve_build_tiers(solution, project_list)
     except ValueError as e:
         console.print(f"[red]Error:[/red] {e}")
         return
 
-    console.print(f"[bold]Building {len(ordered)} projects in dependency order[/bold]")
+    total = sum(len(t) for t in tiers)
+    console.print(f"[bold]Building {total} projects in dependency order[/bold]")
 
     results: list[tuple[str, str, Path | None]] = []
-    for project in ordered:
-        status, log_path = build_project(solution, project, verbose=verbose, no_cache=no_cache)
-        results.append((project.name or "", status, log_path))
-        if status == "failed" and not keep_going:
+    failed_in_prev_tier = False
+
+    for tier in tiers:
+        if failed_in_prev_tier and not keep_going:
             break
 
-    if len(ordered) > 1 or (results and results[0][1] == "failed"):
+        if jobs == 1 or len(tier) == 1:
+            for project in tier:
+                status, log_path = build_project(
+                    solution, project, verbose=verbose, no_cache=no_cache
+                )
+                results.append((project.name or "", status, log_path))
+                if status == "failed" and not keep_going:
+                    failed_in_prev_tier = True
+                    break
+        else:
+            workers = min(jobs, len(tier))
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                future_to_project = {
+                    pool.submit(build_project, solution, p, verbose, no_cache): p for p in tier
+                }
+                for future in as_completed(future_to_project):
+                    project = future_to_project[future]
+                    status, log_path = future.result()
+                    results.append((project.name or "", status, log_path))
+                    if status == "failed":
+                        failed_in_prev_tier = True
+
+    if total > 1 or (results and results[0][1] == "failed"):
         _print_build_summary(results)
+
+
+def _resolve_build_tiers(solution: Solution, projects: list[Project]) -> list[list[Project]]:
+    """Return projects grouped into dependency tiers (same tier = no interdependencies)."""
+    graph: dict[str, set[str]] = {}
+    for project in projects:
+        assert project.name is not None
+        graph[project.name] = {d.name for d in project.depends_on if d.name is not None}
+
+    try:
+        tier_sets = list(toposort(graph))
+    except CircularDependencyError as e:
+        cycle_parts = " → ".join(str(k) for k in e.data)
+        raise ValueError(
+            f"Circular dependency detected: {cycle_parts}\n"
+            f"Fix the dependency cycle in your project definitions."
+        ) from e
+
+    name_to_project = {p.name: p for p in projects}
+    result: list[list[Project]] = []
+    seen: set[str] = set()
+    for tier_set in tier_sets:
+        tier: list[Project] = []
+        for name in tier_set:
+            if name in seen:
+                continue
+            seen.add(name)
+            if name in name_to_project:
+                tier.append(name_to_project[name])
+        if tier:
+            result.append(tier)
+    return result
 
 
 def resolve_build_order(solution: Solution, projects: list[Project]) -> list[Project]:

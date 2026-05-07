@@ -588,8 +588,11 @@ def projects_clone(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
 
 @projects.command("fetch")
 @click.argument("targets", nargs=-1, shell_complete=complete_project_targets)
+@click.option(
+    "--force", is_flag=True, help="Hard-reset repos to origin/<branch>, discarding local changes"
+)
 @pass_context
-def projects_fetch(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
+def projects_fetch(ctx: LocalboxContext, targets: tuple[str, ...], force: bool) -> None:
     """Fetch (git pull) project repositories."""
     sol = load_solution_or_exit()
 
@@ -605,7 +608,7 @@ def projects_fetch(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
 
     from localbox.commands.project import fetch_projects
 
-    fetch_projects(sol, projs, verbose=ctx.verbose)
+    fetch_projects(sol, projs, verbose=ctx.verbose, force=force)
 
 
 @projects.command("switch")
@@ -618,18 +621,25 @@ def projects_fetch(ctx: LocalboxContext, targets: tuple[str, ...]) -> None:
     type=click.Path(exists=True),
     help="Manifest JSON: check out recorded SHAs (mutually exclusive with targets and -b)",
 )
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Clean working tree before checkout (git reset --hard HEAD && git clean -fd)",
+)
 @pass_context
 def projects_switch(
     ctx: LocalboxContext,
     targets: tuple[str, ...],
     branch: str | None,
     manifest_path: str | None,
+    force: bool,
 ) -> None:
     """Switch project branches.
 
     Examples:
         localbox projects switch api -b feature-x
         localbox projects switch --manifest assembles/v1.json
+        localbox projects switch --manifest assembles/v1.json --force
     """
     sol = load_solution_or_exit()
 
@@ -642,7 +652,7 @@ def projects_switch(
         manifest = json.loads(Path(manifest_path).read_text())
         from localbox.commands.project import switch_projects_from_manifest
 
-        switch_projects_from_manifest(sol, manifest, verbose=ctx.verbose)
+        switch_projects_from_manifest(sol, manifest, verbose=ctx.verbose, force=force)
         return
 
     try:
@@ -657,7 +667,7 @@ def projects_switch(
 
     from localbox.commands.project import switch_projects
 
-    switch_projects(sol, projs, branch=branch, verbose=ctx.verbose)
+    switch_projects(sol, projs, branch=branch, verbose=ctx.verbose, force=force)
 
 
 @projects.command("build")
@@ -669,12 +679,21 @@ def projects_switch(
     is_flag=True,
     help="Continue building remaining projects after a failure (default: stop on first error)",
 )
+@click.option(
+    "-j",
+    "--jobs",
+    "jobs_str",
+    default="1",
+    show_default=True,
+    help="Parallel workers (default: 1 = sequential). Use 'auto' or '0' for os.cpu_count().",
+)
 @pass_context
 def projects_build(
     ctx: LocalboxContext,
     targets: tuple[str, ...],
     no_cache: bool,
     keep_going: bool,
+    jobs_str: str,
 ) -> None:
     """Build projects.
 
@@ -683,7 +702,10 @@ def projects_build(
         localbox projects build api            # Build single project
         localbox projects build be fe          # Build two groups
         localbox projects build be:api workers # Qualified name plus whole group
+        localbox projects build -j 4           # Build up to 4 in parallel per tier
     """
+    import os as _os
+
     sol = load_solution_or_exit()
 
     try:
@@ -696,9 +718,13 @@ def projects_build(
         console.print("[yellow]No projects to build.[/yellow]")
         return
 
+    jobs = _os.cpu_count() or 1 if jobs_str in ("auto", "0") else int(jobs_str)
+
     from localbox.commands.project import build_projects
 
-    build_projects(sol, projs, verbose=ctx.verbose, no_cache=no_cache, keep_going=keep_going)
+    build_projects(
+        sol, projs, verbose=ctx.verbose, no_cache=no_cache, keep_going=keep_going, jobs=jobs
+    )
 
 
 @projects.command("status")
@@ -779,20 +805,32 @@ def services_list() -> None:
     type=click.Path(exists=True),
     help="Manifest JSON: apply remote tags and record image digests",
 )
+@click.option(
+    "-j",
+    "--jobs",
+    "jobs_str",
+    default="1",
+    show_default=True,
+    help="Parallel workers (default: 1 = sequential). Use 'auto' or '0' for os.cpu_count().",
+)
 @pass_context
 def services_build(
     ctx: LocalboxContext,
     targets: tuple[str, ...],
     no_cache: bool,
     manifest_path: str | None,
+    jobs_str: str,
 ) -> None:
     """Build service Docker images.
 
     Examples:
-        localbox services build                              # Build all service images
-        localbox services build db:primary                  # Build one service image
-        localbox services build --manifest assembles/v1.json # Build and tag for registry
+        localbox services build                               # Build all service images
+        localbox services build db:primary                   # Build one service image
+        localbox services build --manifest assembles/v1.json  # Build and tag for registry
+        localbox services build -j 4                          # Build 4 images in parallel
     """
+    import os as _os
+
     sol = load_solution_or_exit()
 
     try:
@@ -805,6 +843,8 @@ def services_build(
         console.print("[yellow]No services to build.[/yellow]")
         return
 
+    jobs = _os.cpu_count() or 1 if jobs_str in ("auto", "0") else int(jobs_str)
+
     from localbox.commands.service import build_images
 
     build_images(
@@ -813,6 +853,7 @@ def services_build(
         verbose=ctx.verbose,
         no_cache=no_cache,
         manifest_path=Path(manifest_path) if manifest_path else None,
+        jobs=jobs,
     )
 
 
