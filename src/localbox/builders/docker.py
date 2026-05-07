@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -10,7 +9,7 @@ from typing import Protocol, runtime_checkable
 from loguru import logger
 from rich.console import Console
 
-from localbox.builders.image_builder import prepare_docker_image
+from localbox.builders.image_builder import _run_capturing, prepare_docker_image
 from localbox.config import Solution
 from localbox.models.docker_image import DockerImage
 from localbox.models.service import Service
@@ -42,6 +41,7 @@ def build_service_image(
     verbose: bool = False,
     no_cache: bool = False,
     target_tag: str | None = None,
+    log_path: Path | None = None,
 ) -> bool:
     """Build or pull Docker image for a service."""
     try:
@@ -52,7 +52,13 @@ def build_service_image(
             contexts = service.build_contexts(solution)
             if contexts:
                 return _build_dockerfile_service(
-                    solution, service, contexts, verbose, no_cache, target_tag=target_tag
+                    solution,
+                    service,
+                    contexts,
+                    verbose,
+                    no_cache,
+                    target_tag=target_tag,
+                    log_path=log_path,
                 )
 
         prepare_docker_image(
@@ -63,6 +69,7 @@ def build_service_image(
             verbose=verbose,
             no_cache=no_cache,
             target_tag=target_tag,
+            log_path=log_path,
         )
         return True
     except Exception as e:
@@ -78,6 +85,7 @@ def _build_dockerfile_service(
     verbose: bool,
     no_cache: bool = False,
     target_tag: str | None = None,
+    log_path: Path | None = None,
 ) -> bool:
     """Build a service image from a service-generated Dockerfile.
 
@@ -121,6 +129,6 @@ def _build_dockerfile_service(
         if verbose:
             console.print(f"  $ {' '.join(cmd)}")
 
-        subprocess.check_call(cmd)
+        _run_capturing(cmd, verbose, log_path)
 
     return True

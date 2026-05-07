@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import subprocess
+import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rich.console import Console
@@ -16,6 +18,30 @@ if TYPE_CHECKING:
 console = Console()
 
 
+def _run_capturing(
+    cmd: list[str],
+    verbose: bool,
+    log_path: Path | None,
+) -> None:
+    """Run a command, always capturing output to log_path; also print when verbose."""
+    result = subprocess.run(cmd, capture_output=True)
+    if log_path:
+        with open(log_path, "ab") as f:
+            if result.stdout:
+                f.write(result.stdout)
+            if result.stderr:
+                f.write(result.stderr)
+    if verbose:
+        if result.stdout:
+            sys.stdout.buffer.write(result.stdout)
+            sys.stdout.buffer.flush()
+        if result.stderr:
+            sys.stderr.buffer.write(result.stderr)
+            sys.stderr.buffer.flush()
+    if result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, cmd)
+
+
 def prepare_docker_image(
     solution: Solution,
     image: DockerImage,
@@ -25,6 +51,7 @@ def prepare_docker_image(
     verbose: bool = False,
     no_cache: bool = False,
     target_tag: str | None = None,
+    log_path: Path | None = None,
 ) -> str:
     """Prepare a Docker image (build or pull & tag).
 
@@ -36,6 +63,7 @@ def prepare_docker_image(
         tag_name: Override for image name in tag. If None, uses image.name.
         verbose: Enable verbose output
         target_tag: Full tag override. If set, skips tag derivation entirely.
+        log_path: Path to append image prep output to (always written, regardless of verbose).
 
     Returns the local tag of the prepared image.
     """
@@ -50,9 +78,9 @@ def prepare_docker_image(
             target_tag = f"{solution.name}/{image_type}/{name}:latest"
 
     if image.dockerfile:
-        build_image(solution, image, target_tag, image_type, projects, verbose, no_cache)
+        build_image(solution, image, target_tag, image_type, projects, verbose, no_cache, log_path)
     elif image.image:
-        pull_and_tag_image(image.image, target_tag, verbose)
+        pull_and_tag_image(image.image, target_tag, verbose, log_path)
     else:
         raise ValueError(f"DockerImage '{image.name}' has neither dockerfile nor image")
 
@@ -67,6 +95,7 @@ def build_image(
     projects: list[Project],
     verbose: bool,
     no_cache: bool = False,
+    log_path: Path | None = None,
 ) -> None:
     """Build image using buildx with named contexts."""
     if not image.dockerfile:
@@ -123,15 +152,20 @@ def build_image(
     if verbose:
         console.print(f"  $ {' '.join(cmd)}")
 
-    subprocess.check_call(cmd)
+    _run_capturing(cmd, verbose, log_path)
 
 
-def pull_and_tag_image(source_image: str, target_tag: str, verbose: bool) -> None:
+def pull_and_tag_image(
+    source_image: str,
+    target_tag: str,
+    verbose: bool,
+    log_path: Path | None = None,
+) -> None:
     """Pull and tag image."""
     if verbose:
         console.print(f"  $ docker pull {source_image}")
-    subprocess.check_call(["docker", "pull", source_image])
+    _run_capturing(["docker", "pull", source_image], verbose, log_path)
 
     if verbose:
         console.print(f"  $ docker tag {source_image} {target_tag}")
-    subprocess.check_call(["docker", "tag", source_image, target_tag])
+    _run_capturing(["docker", "tag", source_image, target_tag], verbose, log_path)

@@ -1,10 +1,4 @@
-# Spec: parallel-builds
-
-## Purpose
-
-Defines the `-j`/`--jobs` flag for `localbox projects build` and `localbox services build`, enabling concurrent builds to reduce total build time.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: projects build accepts parallel jobs flag
 `localbox projects build` SHALL accept a `-j <jobs>` / `--jobs <jobs>` option with a default of `1`. When `jobs > 1`, projects within the same dependency tier SHALL be built concurrently up to `<jobs>` workers. Projects in different tiers SHALL still execute sequentially (tier N completes before tier N+1 starts). When omitted (default `1`), behaviour is fully sequential and unchanged.

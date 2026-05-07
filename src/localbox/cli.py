@@ -687,6 +687,12 @@ def projects_switch(
     show_default=True,
     help="Parallel workers (default: 1 = sequential). Use 'auto' or '0' for os.cpu_count().",
 )
+@click.option(
+    "--verbose",
+    is_flag=True,
+    default=False,
+    help="Stream full Docker output (default: quiet — one line per job, logs in .build/logs/).",
+)
 @pass_context
 def projects_build(
     ctx: LocalboxContext,
@@ -694,15 +700,20 @@ def projects_build(
     no_cache: bool,
     keep_going: bool,
     jobs_str: str,
+    verbose: bool,
 ) -> None:
     """Build projects.
 
+    By default, output is quiet: one status line per job with full output written
+    to .build/logs/<project>.log. Use --verbose to stream all Docker output.
+
     Examples:
-        localbox projects build                # Build all projects
+        localbox projects build                # Build all projects (quiet)
         localbox projects build api            # Build single project
         localbox projects build be fe          # Build two groups
         localbox projects build be:api workers # Qualified name plus whole group
         localbox projects build -j 4           # Build up to 4 in parallel per tier
+        localbox projects build --verbose      # Stream full Docker output
     """
     import os as _os
 
@@ -723,7 +734,12 @@ def projects_build(
     from localbox.commands.project import build_projects
 
     build_projects(
-        sol, projs, verbose=ctx.verbose, no_cache=no_cache, keep_going=keep_going, jobs=jobs
+        sol,
+        projs,
+        verbose=ctx.verbose or verbose,
+        no_cache=no_cache,
+        keep_going=keep_going,
+        jobs=jobs,
     )
 
 
@@ -813,6 +829,12 @@ def services_list() -> None:
     show_default=True,
     help="Parallel workers (default: 1 = sequential). Use 'auto' or '0' for os.cpu_count().",
 )
+@click.option(
+    "--verbose",
+    is_flag=True,
+    default=False,
+    help="Stream full Docker output to stdout (default: quiet — one status line per job).",
+)
 @pass_context
 def services_build(
     ctx: LocalboxContext,
@@ -820,14 +842,18 @@ def services_build(
     no_cache: bool,
     manifest_path: str | None,
     jobs_str: str,
+    verbose: bool,
 ) -> None:
     """Build service Docker images.
 
+    By default, output is quiet: one status line per job. Use --verbose to stream all output.
+
     Examples:
-        localbox services build                               # Build all service images
+        localbox services build                               # Build all service images (quiet)
         localbox services build db:primary                   # Build one service image
         localbox services build --manifest assembles/v1.json  # Build and tag for registry
         localbox services build -j 4                          # Build 4 images in parallel
+        localbox services build --verbose                     # Stream full Docker output
     """
     import os as _os
 
@@ -850,7 +876,7 @@ def services_build(
     build_images(
         sol,
         svcs,
-        verbose=ctx.verbose,
+        verbose=ctx.verbose or verbose,
         no_cache=no_cache,
         manifest_path=Path(manifest_path) if manifest_path else None,
         jobs=jobs,
