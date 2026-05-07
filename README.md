@@ -215,10 +215,15 @@ localbox override init                  # Create solution-override.py template
 localbox projects list                  # List projects (tree view)
 localbox projects clone                 # Clone all repos
 localbox projects clone api             # Clone a single project
-localbox projects fetch                 # git pull (all)
+localbox projects fetch                 # git pull --rebase (all)
 localbox projects fetch libs            # git pull for every project in the libs group
+localbox projects fetch --force         # Hard-reset to origin/<branch>, discard local changes
 localbox projects switch -b feature     # Switch branch (all projects)
-localbox projects build                 # Build all (in dependency order)
+localbox projects switch -b feature --force              # Clean working tree before checkout
+localbox projects switch --manifest assembles/v1.json    # Check out exact commits from manifest
+localbox projects switch --manifest assembles/v1.json --force  # Clean before each SHA checkout
+localbox projects build                 # Build all (sequential, dependency order)
+localbox projects build -j 4            # Build up to 4 in parallel per dependency tier
 localbox projects build be:api workers  # Build multiple targets
 localbox projects status                # Git status of all repos
 localbox projects clean                 # Run builder clean (mvn clean, gradle clean, …)
@@ -227,6 +232,7 @@ localbox projects clean                 # Run builder clean (mvn clean, gradle c
 localbox services list                  # List services (tree view)
 localbox services build                 # Build all service images
 localbox services build be              # Build one group
+localbox services build -j 4            # Build up to 4 images in parallel
 localbox services build --manifest assembles/v1.json      # Build + apply registry tags from manifest
 localbox services push --manifest assembles/v1.json       # Push all images to registry
 
@@ -240,7 +246,7 @@ docker compose down                     # Stop services
 # Manifests — CI/CD assemble snapshots
 localbox manifest generate --manifest assembles/v1.json --tag v1 --registry reg.io/org
                                         # Record current repo HEAD SHAs + write tag/registry coords
-localbox projects switch --manifest assembles/v1.json     # Check out exact commits from manifest
+# (projects switch --manifest and services build --manifest are shown above)
 
 # Utilities (top-level — no domain)
 localbox doctor                         # Verify system requirements

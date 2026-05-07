@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Bash(.venv/bin/pytest:*)",
+      "Read(//tmp/dc_test/**)",
+      "Bash(docker compose run --rm test)",
+      "Bash(ruff:*)",
+      "Bash(.venv/bin/ruff:*)"
+    ]
+  }
+}
