@@ -51,7 +51,7 @@ _NoAliasDumper.add_representer(
 )
 
 
-def _quote_env_value(value: str) -> str:
+def _quote_env_value(value: object) -> str:
     """Quote a value for .env file using double quotes with all special chars escaped.
 
     Escapes characters that would cause shell substitution or command execution:
@@ -61,7 +61,7 @@ def _quote_env_value(value: str) -> str:
       `   ->  \\`   (prevents backtick command substitution)
     """
     escaped = (
-        value.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
+        str(value).replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
     )
     return f'"{escaped}"'
 
