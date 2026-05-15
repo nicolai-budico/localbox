@@ -17,6 +17,7 @@ from pathlib import Path
 import click
 from loguru import logger
 from rich.console import Console
+from rich.table import Table
 from rich.tree import Tree
 
 from localbox import __version__
@@ -56,9 +57,11 @@ def load_solution_or_exit() -> Solution:
     """Load solution or exit with error message."""
     from localbox.log import setup_logging
 
+    ctx = click.get_current_context(silent=True)
+    verbose = ctx.obj.verbose if (ctx and ctx.obj) else False
     try:
         solution = load_solution()
-        setup_logging(solution.root)
+        setup_logging(solution.root, verbose=verbose)
         logger.info("localbox {}", " ".join(sys.argv[1:]))
         return solution
     except SolutionNotFoundError as e:
@@ -1348,6 +1351,292 @@ def _generate_override_template(sol: Solution, old: _ParsedOverride | None = Non
 
     lines.append("")
     return "\n".join(lines)
+
+
+# ── override list / set / clear helpers ──────────────────────────────────────
+
+# Matches the LHS of an assignment line, stripping an optional leading comment.
+# Works for both class-based (solution.config.env.KEY) and
+# dict-based (solution.config.env["KEY"]) forms, as well as p.group.name.path.
+_OVERRIDE_LHS_RE = re.compile(r"^\s*(?:#\s*)?([\w.\[\]\"']+)\s*=")
+
+# Config attributes surfaced in the override file.
+_OVERRIDE_CONFIG_ATTRS: tuple[str, ...] = (
+    "default_branch",
+    "build_dir",
+    "project_dir",
+    "registry",
+)
+
+
+def _identifier_lhs_patterns(identifier: str) -> list[str]:
+    """Return the LHS strings that *identifier* can match in solution-override.py."""
+    parts = identifier.split(".", 1)
+    if len(parts) != 2:
+        return []
+    namespace, rest = parts[0], parts[1]
+    if namespace == "env":
+        return [f"solution.config.env.{rest}", f'solution.config.env["{rest}"]']
+    if namespace == "config":
+        return [f"solution.config.{rest}"]
+    if namespace == "project":
+        return [f"p.{rest}"]
+    return []
+
+
+def _find_override_line(lines: list[str], identifier: str) -> int | None:
+    """Return the index of the line in *lines* matching *identifier*, or None."""
+    patterns = set(_identifier_lhs_patterns(identifier))
+    if not patterns:
+        return None
+    for i, raw_line in enumerate(lines):
+        m = _OVERRIDE_LHS_RE.match(raw_line)
+        if m and m.group(1) in patterns:
+            return i
+    return None
+
+
+def _line_lhs(raw_line: str) -> str:
+    """Extract the LHS of an assignment (commented or uncommented), stripped."""
+    stripped = raw_line.lstrip()
+    text = (
+        stripped[2:]
+        if stripped.startswith("# ")
+        else (stripped[1:] if stripped.startswith("#") else stripped)
+    )
+    return text.split("=", 1)[0].rstrip() if "=" in text else ""
+
+
+def _line_is_commented(raw_line: str) -> bool:
+    return raw_line.lstrip().startswith("#")
+
+
+# ── override list ────────────────────────────────────────────────────────────
+
+
+@override.command("list")
+@click.pass_context
+def override_list(ctx: click.Context) -> None:
+    """List all overridable identifiers with defaults and current values."""
+    from localbox.log import setup_logging
+
+    try:
+        solution_root = find_solution_root()
+    except SolutionNotFoundError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+    verbose = ctx.obj.verbose if ctx.obj else False
+    setup_logging(solution_root, verbose=verbose)
+
+    try:
+        sol = load_solution(solution_root, skip_override=True)
+    except Exception as e:
+        console.print(f"[red]Error loading solution:[/red] {e}")
+        sys.exit(1)
+
+    override_path = solution_root / OVERRIDE_FILE
+    parsed: _ParsedOverride | None = None
+    if override_path.exists():
+        parsed = _parse_existing_override(override_path)
+    else:
+        console.print(
+            f"[yellow]No {OVERRIDE_FILE} found.[/yellow] "
+            "Run [bold]localbox override init[/bold] to create one.\n"
+        )
+
+    raw_env = sol.config.env if sol.config else {}
+    env_dict = _env_to_dict(raw_env)
+    required_env = {k: v for k, v in env_dict.items() if v is None}
+    optional_env = {k: v for k, v in env_dict.items() if v is not None}
+
+    def _cur_env(key: str) -> str | None:
+        return parsed.env.get(key) if parsed else None
+
+    def _cur_cfg(attr: str) -> str | None:
+        return parsed.config.get(attr) if parsed else None
+
+    def _fmt_default(val: object) -> str:
+        """Format a default env value — unwraps EnvRef to its raw string."""
+        raw = getattr(val, "raw", None)
+        if raw is not None:
+            return str(raw)
+        if isinstance(val, str):
+            return repr(val)
+        return str(val)
+
+    # One unified table so all columns share the same widths.
+    table = Table(show_header=True, header_style="bold", box=None, pad_edge=False, show_edge=False)
+    table.add_column("Identifier", no_wrap=True)
+    table.add_column("Default")
+    table.add_column("Current value")
+
+    if required_env:
+        table.add_row("[bold red]REQUIRED env vars[/bold red]", "", "")
+        for key in sorted(required_env):
+            override_val = _cur_env(key)
+            cur = (
+                f"[green]{override_val}[/green]"
+                if override_val
+                else "[bold red][NOT SET][/bold red]"
+            )
+            table.add_row(f"  env.{key}", "[red](required)[/red]", cur)
+
+    if optional_env:
+        table.add_row("[bold]Optional env vars[/bold]", "", "")
+        for key in sorted(optional_env):
+            default_str = _fmt_default(optional_env[key])
+            override_val = _cur_env(key)
+            cur = f"[green]{override_val}[/green]" if override_val else "[dim](default)[/dim]"
+            table.add_row(f"  env.{key}", default_str, cur)
+
+    if sol.config:
+        table.add_row("[bold]Config attributes[/bold]", "", "")
+        for attr in _OVERRIDE_CONFIG_ATTRS:
+            default_val = getattr(sol.config, attr, None)
+            default_str = repr(default_val) if default_val is not None else "[dim](none)[/dim]"
+            override_val = _cur_cfg(attr)
+            cur = f"[green]{override_val}[/green]" if override_val else "[dim](default)[/dim]"
+            table.add_row(f"  config.{attr}", default_str, cur)
+
+    # Project paths: only show if there are active overrides.
+    if parsed and parsed.projects:
+        table.add_row("[bold]Overridden project paths[/bold]", "", "")
+        for ref, overrides in sorted(parsed.projects.items()):
+            path_val = overrides.get("path")
+            if path_val:
+                # ref is "p.group.name" → identifier is "project.group.name.path"
+                ident = "project." + ref[2:] + ".path"
+                table.add_row(
+                    f"  {ident}", "[dim](auto-detected)[/dim]", f"[green]{path_val}[/green]"
+                )
+
+    console.print(table)
+
+
+# ── override set ─────────────────────────────────────────────────────────────
+
+
+@override.command("set")
+@click.argument("identifier")
+@click.argument("value")
+@click.pass_context
+def override_set(ctx: click.Context, identifier: str, value: str) -> None:
+    """Set a single override value in solution-override.py.
+
+    IDENTIFIER is a dotted name from `localbox override list`
+    (e.g. env.DB_PASS, config.build_dir, project.libs.utils.path).
+
+    VALUE is written verbatim as a Python literal.
+    Include quotes for strings: localbox override set env.DB_PASS '"secret"'
+    """
+    from localbox.log import setup_logging
+
+    try:
+        solution_root = find_solution_root()
+    except SolutionNotFoundError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+    setup_logging(solution_root, verbose=ctx.obj.verbose if ctx.obj else False)
+
+    override_path = solution_root / OVERRIDE_FILE
+    if not override_path.exists():
+        console.print(
+            f"[red]Error:[/red] {OVERRIDE_FILE} not found. "
+            "Run [bold]localbox override init[/bold] first."
+        )
+        sys.exit(1)
+
+    lines = override_path.read_text().splitlines(keepends=True)
+    idx = _find_override_line(lines, identifier)
+    if idx is None:
+        console.print(
+            f"[red]Error:[/red] Unknown identifier [bold]{identifier}[/bold]. "
+            "Run [bold]localbox override list[/bold] to see valid identifiers."
+        )
+        sys.exit(1)
+
+    # If value is not already a valid Python literal (e.g. user typed 172.17.0.1
+    # without quotes), auto-wrap it as a string literal so the override file stays
+    # syntactically valid Python.
+    try:
+        ast.literal_eval(value)
+        py_value = value
+    except (ValueError, SyntaxError):
+        py_value = repr(value)
+
+    lhs = _line_lhs(lines[idx])
+    lines[idx] = f"{lhs} = {py_value}\n"
+    override_path.write_text("".join(lines))
+    console.print(f"[green]Set[/green] {lhs} = {py_value}")
+
+
+# ── override clear ────────────────────────────────────────────────────────────
+
+
+@override.command("clear")
+@click.argument("identifier")
+@click.pass_context
+def override_clear(ctx: click.Context, identifier: str) -> None:
+    """Reset a single override value to its default in solution-override.py.
+
+    IDENTIFIER is a dotted name from `localbox override list`
+    (e.g. env.DB_PASS, config.build_dir, project.libs.utils.path).
+    """
+    from localbox.log import setup_logging
+
+    try:
+        solution_root = find_solution_root()
+    except SolutionNotFoundError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+    setup_logging(solution_root, verbose=ctx.obj.verbose if ctx.obj else False)
+
+    override_path = solution_root / OVERRIDE_FILE
+    if not override_path.exists():
+        console.print(
+            f"[red]Error:[/red] {OVERRIDE_FILE} not found. "
+            "Run [bold]localbox override init[/bold] first."
+        )
+        sys.exit(1)
+
+    lines = override_path.read_text().splitlines(keepends=True)
+    idx = _find_override_line(lines, identifier)
+    if idx is None:
+        console.print(
+            f"[red]Error:[/red] Unknown identifier [bold]{identifier}[/bold]. "
+            "Run [bold]localbox override list[/bold] to see valid identifiers."
+        )
+        sys.exit(1)
+
+    if _line_is_commented(lines[idx]):
+        console.print(f"[yellow]{identifier}[/yellow] is already at its default (no change).")
+        return
+
+    # For required env vars: restore to None placeholder rather than commenting out.
+    is_required = False
+    parts = identifier.split(".", 1)
+    if len(parts) == 2 and parts[0] == "env":
+        env_key = parts[1]
+        try:
+            sol_defaults = load_solution(solution_root, skip_override=True)
+            raw_env = sol_defaults.config.env if sol_defaults.config else {}
+            env_dict = _env_to_dict(raw_env)
+            is_required = env_key in env_dict and env_dict[env_key] is None
+        except Exception:
+            pass
+
+    lhs = _line_lhs(lines[idx])
+    if is_required:
+        lines[idx] = f"{lhs} = None  # REQUIRED — set a value\n"
+        console.print(f"[yellow]Cleared[/yellow] {identifier} (restored required placeholder)")
+    else:
+        lines[idx] = "# " + lines[idx].lstrip()
+        console.print(f"[yellow]Cleared[/yellow] {identifier} (reverted to default)")
+
+    override_path.write_text("".join(lines))
 
 
 # =============================================================================
