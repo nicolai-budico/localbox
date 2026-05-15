@@ -133,6 +133,9 @@ localbox manifest generate --manifest assembles/v1.json --tag v1 --registry reg.
 # Scaffolding:
 localbox solution init                    # Create solution.py + assets/
 localbox override init                    # Create solution-override.py
+localbox override list                    # List all overridable identifiers (env, config, overridden project paths)
+localbox override set env.DB_PASS secret  # Set a single override value (auto-quoted if needed)
+localbox override clear env.DB_PASS       # Reset a value to its default
 ```
 
 ## Key Conventions

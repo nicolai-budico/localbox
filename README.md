@@ -210,6 +210,9 @@ db:primary                  # Single service
 # Solution & override scaffolding
 localbox solution init                  # Create solution.py, assets/, patches/
 localbox override init                  # Create solution-override.py template
+localbox override list                  # Show all overridable identifiers (env, config, overridden project paths)
+localbox override set env.DB_PASS secret  # Set a single override value (auto-quoted if not a Python literal)
+localbox override clear env.DB_PASS     # Reset a single override value to its default
 
 # Projects
 localbox projects list                  # List projects (tree view)
@@ -329,6 +332,14 @@ solution.config.env.db_pass = "my-local-password"
 ```
 
 Generate a template: `localbox override init`
+
+Inspect and manage values without editing the file directly:
+
+```bash
+localbox override list                    # Show all identifiers, defaults, and current overrides
+localbox override set env.db_pass secret  # Set a value (auto-quoted if not a Python literal)
+localbox override clear env.db_pass       # Revert to default (required fields restore to None placeholder)
+```
 
 ### Referencing env values in services
 
@@ -580,7 +591,7 @@ Start Docker Desktop or the Docker Engine service. Run `localbox doctor` to veri
 Your SSH key is not registered with the Git host. Check `ssh -T git@github.com`. For HTTPS repos, no SSH key is needed.
 
 **`env.db_pass is required but not set`**
-Create `solution-override.py` and set the required value: `solution.config.env.db_pass = "mypassword"`. Run `localbox override init` to generate a template.
+Run `localbox override init` to generate `solution-override.py`, then `localbox override list` to see required fields and `localbox override set env.db_pass mypassword` to set them.
 
 **BuildKit not available**
 Enable BuildKit: `export DOCKER_BUILDKIT=1`, or update Docker to 20.10+ where it is enabled by default.
