@@ -7,6 +7,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -57,6 +58,7 @@ def _run_docker_with_cleanup(
     container_name: str,
     log_path: Path | None = None,
     timeout_minutes: int | None = None,
+    quiet: bool = False,
 ) -> int:
     """Run docker command, tee output to log file, and kill container on interrupt or timeout.
 
@@ -66,6 +68,7 @@ def _run_docker_with_cleanup(
         log_path: Optional path to save build output (overwritten each run).
         timeout_minutes: Kill the container and return exit code 124 after this
                          many minutes. None means no timeout.
+        quiet: When True, suppress per-line stdout output (write to log_file only).
     """
     log_file = open(log_path, "w") if log_path else None
 
@@ -80,8 +83,9 @@ def _run_docker_with_cleanup(
         if process.stdout:
             for raw_line in process.stdout:
                 text = raw_line.decode(errors="replace")
-                sys.stdout.write(text)
-                sys.stdout.flush()
+                if not quiet:
+                    sys.stdout.write(text)
+                    sys.stdout.flush()
                 if log_file:
                     log_file.write(text)
 
@@ -139,6 +143,14 @@ def run_builder(
         console.print(f"[red]Error:[/red] No builder configured for {project.name}")
         return False
 
+    # Resolve log path before image prep so prep output is also captured
+    if log_path is None:
+        logs_dir = solution.directories.build / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        log_name = project.path_name.replace(":", "-")
+        log_path = logs_dir / f"{log_name}.log"
+    log_path.write_bytes(b"")  # truncate / create fresh for this build run
+
     # Step 1: Resolve Docker image
     # Tag name: <group>/<local_name> (e.g., backend/mylib)
     if project.group:
@@ -147,7 +159,9 @@ def run_builder(
         tag_name = project.path_name
 
     try:
-        image_tag = _resolve_builder_image(solution, project, builder, tag_name, verbose, no_cache)
+        image_tag = _resolve_builder_image(
+            solution, project, builder, tag_name, verbose, no_cache, log_path
+        )
     except Exception as e:
         logger.exception("Error preparing builder image for {}", project.name)
         console.print(f"[red]Error preparing builder image:[/red] {e}")
@@ -202,19 +216,35 @@ def run_builder(
     docker_cmd.append(image_tag)
     docker_cmd.extend(build_cmd)
 
+    quiet = not verbose
+
     logger.debug("$ {}", " ".join(docker_cmd))
     if verbose:
         console.print(f"  $ {' '.join(docker_cmd)}")
 
+    if quiet:
+        console.print(f"[[cyan]{project.name}[/cyan]] Building...")
+
+    start = time.monotonic()
     returncode = _run_docker_with_cleanup(
         docker_cmd,
         container_name,
         log_path=log_path,
         timeout_minutes=builder.timeout,
+        quiet=quiet,
     )
+    elapsed = int(time.monotonic() - start)
 
     if returncode != 0:
         logger.error("docker run exited {} for {}", returncode, project.name)
+        if quiet:
+            console.print(
+                f"[[red]{project.name}[/red]] FAILED ({elapsed}s)"
+                + (f" — log: {log_path}" if log_path else "")
+            )
+    elif quiet:
+        console.print(f"[[green]{project.name}[/green]] OK  ({elapsed}s)")
+
     return returncode == 0
 
 
@@ -225,6 +255,7 @@ def _resolve_builder_image(
     tag_name: str,
     verbose: bool,
     no_cache: bool = False,
+    log_path: Path | None = None,
 ) -> str:
     """Resolve and prepare the builder Docker image.
 
@@ -249,7 +280,14 @@ def _resolve_builder_image(
         assert builder.docker_image is not None
         target_tag = f"{solution.name}/builder/{tag_name}:latest"
         build_image(
-            solution, builder.docker_image, target_tag, "builder", [project], verbose, no_cache
+            solution,
+            builder.docker_image,
+            target_tag,
+            "builder",
+            [project],
+            verbose,
+            no_cache,
+            log_path,
         )
         return target_tag
     else:
@@ -257,7 +295,7 @@ def _resolve_builder_image(
 
     # Pull and tag the image
     target_tag = f"{solution.name}/builder/{tag_name}:latest"
-    pull_and_tag_image(source_image, target_tag, verbose)
+    pull_and_tag_image(source_image, target_tag, verbose, log_path)
 
     return target_tag
 

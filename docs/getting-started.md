@@ -97,13 +97,15 @@ api = Service(name="api", project=pet_clinic, image=DockerImage(dockerfile="asse
 
 ## Step 3 — Set up secrets
 
-The database password is a required secret. Create your local overrides file from the template:
+The database password is a required secret. Generate your local overrides file and set the value:
 
 ```bash
-cp solution-override.py.example solution-override.py
+localbox override init                          # generate solution-override.py
+localbox override list                          # see all required fields (shown at the top)
+localbox override set env.db_pass my-password   # set the value
 ```
 
-Edit `solution-override.py` and set a password:
+Or edit `solution-override.py` directly:
 
 ```python
 import solution

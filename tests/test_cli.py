@@ -261,6 +261,284 @@ class TestOverrideInit:
 
 
 # ---------------------------------------------------------------------------
+# localbox override list
+# ---------------------------------------------------------------------------
+
+
+class TestOverrideList:
+    """Tests for the override list command."""
+
+    def _setup_minimal(self, runner: CliRunner) -> None:
+        Path(CONFIG_FILE).write_text(
+            "from localbox.models import SolutionConfig\nconfig = SolutionConfig()\n"
+        )
+
+    def _setup_with_env(self, runner: CliRunner) -> None:
+        Path(CONFIG_FILE).write_text(
+            "from localbox.models import SolutionConfig\n"
+            "config = SolutionConfig(env={'DB_PASS': None, 'LOG_LEVEL': 'info'})\n"
+        )
+
+    def test_no_override_file_shows_notice(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup_minimal(runner)
+            result = runner.invoke(cli, ["override", "list"])
+            assert result.exit_code == 0
+            assert "override init" in result.output
+
+    def test_shows_required_env_vars(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup_with_env(runner)
+            runner.invoke(cli, ["override", "init"])
+            result = runner.invoke(cli, ["override", "list"])
+            assert result.exit_code == 0
+            assert "env.DB_PASS" in result.output
+            assert "REQUIRED" in result.output or "required" in result.output
+
+    def test_shows_optional_env_vars(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup_with_env(runner)
+            runner.invoke(cli, ["override", "init"])
+            result = runner.invoke(cli, ["override", "list"])
+            assert result.exit_code == 0
+            assert "env.LOG_LEVEL" in result.output
+
+    def test_required_before_optional(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup_with_env(runner)
+            runner.invoke(cli, ["override", "init"])
+            result = runner.invoke(cli, ["override", "list"])
+            assert result.exit_code == 0
+            pos_required = result.output.index("DB_PASS")
+            pos_optional = result.output.index("LOG_LEVEL")
+            assert pos_required < pos_optional
+
+    def test_shows_config_attributes(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup_minimal(runner)
+            runner.invoke(cli, ["override", "init"])
+            result = runner.invoke(cli, ["override", "list"])
+            assert result.exit_code == 0
+            assert "config.build_dir" in result.output
+            assert "config.default_branch" in result.output
+
+    def test_shows_current_override_value(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup_with_env(runner)
+            runner.invoke(cli, ["override", "init"])
+            Path("solution-override.py").write_text(
+                "import solution\n"
+                'solution.config.env["DB_PASS"] = "secret"\n'
+                '# solution.config.env["LOG_LEVEL"] = "info"\n'
+            )
+            result = runner.invoke(cli, ["override", "list"])
+            assert result.exit_code == 0
+            assert "secret" in result.output
+
+    def test_shows_overridden_project_path(self):
+        """Project paths appear in list only when an override is set."""
+        runner = _runner()
+        with runner.isolated_filesystem():
+            Path(CONFIG_FILE).write_text(
+                "from localbox.models import SolutionConfig, Project\n"
+                "config = SolutionConfig()\n"
+                'myproject = Project("myproject", repo="git@github.com:org/repo.git")\n'
+            )
+            runner.invoke(cli, ["override", "init"])
+            # Before setting: project should NOT appear
+            result = runner.invoke(cli, ["override", "list"])
+            assert result.exit_code == 0
+            assert "project.myproject.path" not in result.output
+            # After setting: project SHOULD appear
+            runner.invoke(
+                cli, ["override", "set", "project.myproject.path", '"/home/dev/myproject"']
+            )
+            result = runner.invoke(cli, ["override", "list"])
+            assert result.exit_code == 0
+            assert "project.myproject.path" in result.output
+
+
+# ---------------------------------------------------------------------------
+# localbox override set
+# ---------------------------------------------------------------------------
+
+
+class TestOverrideSet:
+    """Tests for the override set command."""
+
+    def _setup_with_env(self, runner: CliRunner) -> None:
+        Path(CONFIG_FILE).write_text(
+            "from localbox.models import SolutionConfig\n"
+            "config = SolutionConfig(env={'DB_PASS': None, 'LOG_LEVEL': 'info'})\n"
+        )
+        runner.invoke(cli, ["override", "init"])
+
+    def test_no_override_file_fails(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            Path(CONFIG_FILE).write_text(
+                "from localbox.models import SolutionConfig\nconfig = SolutionConfig()\n"
+            )
+            result = runner.invoke(cli, ["override", "set", "config.build_dir", '".dist"'])
+            assert result.exit_code != 0
+            assert "override init" in result.output
+
+    def test_unknown_identifier_fails(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup_with_env(runner)
+            result = runner.invoke(cli, ["override", "set", "env.NONEXISTENT", '"val"'])
+            assert result.exit_code != 0
+            assert "Unknown identifier" in result.output
+
+    def test_set_required_env_var(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup_with_env(runner)
+            result = runner.invoke(cli, ["override", "set", "env.DB_PASS", '"secret"'])
+            assert result.exit_code == 0
+            content = Path("solution-override.py").read_text()
+            assert (
+                'solution.config.env["DB_PASS"] = "secret"' in content
+                or 'solution.config.env.DB_PASS = "secret"' in content
+            )
+            assert "REQUIRED" not in content.split("DB_PASS")[1].split("\n")[0]
+
+    def test_set_optional_env_var(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup_with_env(runner)
+            result = runner.invoke(cli, ["override", "set", "env.LOG_LEVEL", '"debug"'])
+            assert result.exit_code == 0
+            content = Path("solution-override.py").read_text()
+            assert '"debug"' in content
+
+    def test_set_config_attr(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup_with_env(runner)
+            result = runner.invoke(cli, ["override", "set", "config.build_dir", '".dist"'])
+            assert result.exit_code == 0
+            content = Path("solution-override.py").read_text()
+            assert 'solution.config.build_dir = ".dist"' in content
+
+    def test_set_updates_existing_value(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup_with_env(runner)
+            runner.invoke(cli, ["override", "set", "config.build_dir", '".dist1"'])
+            runner.invoke(cli, ["override", "set", "config.build_dir", '".dist2"'])
+            content = Path("solution-override.py").read_text()
+            assert '".dist2"' in content
+            assert '".dist1"' not in content
+
+    def test_set_prints_confirmation(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup_with_env(runner)
+            result = runner.invoke(cli, ["override", "set", "config.build_dir", '".dist"'])
+            assert result.exit_code == 0
+            assert "build_dir" in result.output
+
+
+# ---------------------------------------------------------------------------
+# localbox override clear
+# ---------------------------------------------------------------------------
+
+
+class TestOverrideClear:
+    """Tests for the override clear command."""
+
+    def _setup_with_env(self, runner: CliRunner) -> None:
+        Path(CONFIG_FILE).write_text(
+            "from localbox.models import SolutionConfig\n"
+            "config = SolutionConfig(env={'DB_PASS': None, 'LOG_LEVEL': 'info'})\n"
+        )
+        runner.invoke(cli, ["override", "init"])
+
+    def test_no_override_file_fails(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            Path(CONFIG_FILE).write_text(
+                "from localbox.models import SolutionConfig\nconfig = SolutionConfig()\n"
+            )
+            result = runner.invoke(cli, ["override", "clear", "config.build_dir"])
+            assert result.exit_code != 0
+            assert "override init" in result.output
+
+    def test_unknown_identifier_fails(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup_with_env(runner)
+            result = runner.invoke(cli, ["override", "clear", "env.NONEXISTENT"])
+            assert result.exit_code != 0
+            assert "Unknown identifier" in result.output
+
+    def test_clear_set_value_comments_it_out(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup_with_env(runner)
+            runner.invoke(cli, ["override", "set", "config.build_dir", '".dist"'])
+            result = runner.invoke(cli, ["override", "clear", "config.build_dir"])
+            assert result.exit_code == 0
+            content = Path("solution-override.py").read_text()
+            assert "# solution.config.build_dir" in content
+
+    def test_clear_already_default_is_noop(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup_with_env(runner)
+            # LOG_LEVEL is optional and commented out after init
+            result = runner.invoke(cli, ["override", "clear", "env.LOG_LEVEL"])
+            assert result.exit_code == 0
+            assert "already at its default" in result.output
+
+    def test_clear_required_field_restores_none_placeholder(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup_with_env(runner)
+            # Set it first
+            runner.invoke(cli, ["override", "set", "env.DB_PASS", '"secret"'])
+            # Now clear it
+            result = runner.invoke(cli, ["override", "clear", "env.DB_PASS"])
+            assert result.exit_code == 0
+            content = Path("solution-override.py").read_text()
+            # Must restore to None placeholder, not be commented out
+            db_pass_line = next(
+                ln for ln in content.splitlines() if "DB_PASS" in ln and not ln.startswith("#")
+            )
+            assert "None" in db_pass_line
+            assert "REQUIRED" in db_pass_line
+
+    def test_clear_optional_set_value_is_commented(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup_with_env(runner)
+            runner.invoke(cli, ["override", "set", "env.LOG_LEVEL", '"debug"'])
+            runner.invoke(cli, ["override", "clear", "env.LOG_LEVEL"])
+            content = Path("solution-override.py").read_text()
+            assert "# " in content
+            # The line should be commented
+            log_lines = [ln for ln in content.splitlines() if "LOG_LEVEL" in ln]
+            assert all(ln.startswith("#") for ln in log_lines)
+
+    def test_clear_prints_confirmation(self):
+        runner = _runner()
+        with runner.isolated_filesystem():
+            self._setup_with_env(runner)
+            runner.invoke(cli, ["override", "set", "config.build_dir", '".dist"'])
+            result = runner.invoke(cli, ["override", "clear", "config.build_dir"])
+            assert result.exit_code == 0
+            assert "Cleared" in result.output or "cleared" in result.output
+
+
+# ---------------------------------------------------------------------------
 # Error: outside a solution directory
 # ---------------------------------------------------------------------------
 

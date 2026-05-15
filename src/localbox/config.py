@@ -355,7 +355,7 @@ def _collect_objects(
     return config
 
 
-def load_solution(solution_root: Path | None = None) -> Solution:
+def load_solution(solution_root: Path | None = None, *, skip_override: bool = False) -> Solution:
     """Import solution.py and collect all objects.
 
     Configuration discovery is driven by imports within solution.py.
@@ -364,6 +364,7 @@ def load_solution(solution_root: Path | None = None) -> Solution:
 
     Args:
         solution_root: Path to solution root. If None, searches for it.
+        skip_override: If True, skip loading solution-override.py even if present.
 
     Returns:
         Loaded Solution object with all projects and services.
@@ -403,11 +404,11 @@ def load_solution(solution_root: Path | None = None) -> Solution:
             if (pkg_dir / "__init__.py").exists() and pkg_name not in sys.modules:
                 __import__(pkg_name)
 
-        # 3. Exec solution-override.py if present.
+        # 3. Exec solution-override.py if present (and not skipped).
         # Runs after all packages are imported so it can `import projects as p`
         # and mutate project/service/config objects directly.
         override_file = solution_root / OVERRIDE_FILE
-        if override_file.exists():
+        if not skip_override and override_file.exists():
             logger.debug("Applying overrides from {}", override_file)
             _import_python_file(override_file, "_localbox_solution_override")
 

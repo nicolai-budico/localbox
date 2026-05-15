@@ -24,21 +24,44 @@ def _build_one_image(
     no_cache: bool,
 ) -> tuple[str, bool]:
     """Build a single service image and apply manifest tags. Returns (name, success)."""
+    import time
+
     logger.info("build-image {} (no_cache={})", service.name, no_cache)
-    console.print(f"[blue]Building image[/blue] {service.name}...")
+    quiet = not verbose
+
+    logs_dir = solution.directories.build / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_name = (service.name or "service").replace(":", "-")
+    log_path = logs_dir / f"{log_name}.log"
+    log_path.write_bytes(b"")  # truncate / create fresh for this build run
+
+    if quiet:
+        console.print(f"[[cyan]{service.name}[/cyan]] Building...")
+    else:
+        console.print(f"[blue]Building image[/blue] {service.name}...")
 
     build_target_tag: str | None = None
     if manifest is not None and service.image.name:
         registry = str(manifest["registry"])
         build_target_tag = solution.service_remote_tag(service.image.name, "latest", registry)
 
+    start = time.monotonic()
     success = do_build(
-        solution, service, verbose=verbose, no_cache=no_cache, target_tag=build_target_tag
+        solution,
+        service,
+        verbose=verbose,
+        no_cache=no_cache,
+        target_tag=build_target_tag,
+        log_path=log_path,
     )
+    elapsed = int(time.monotonic() - start)
 
     if success:
         logger.info("build-image {} completed", service.name)
-        console.print(f"[green]Built[/green] {service.name}")
+        if quiet:
+            console.print(f"[[green]{service.name}[/green]] OK  ({elapsed}s)")
+        else:
+            console.print(f"[green]Built[/green] {service.name}")
 
         if manifest is not None and service.image.name:
             registry = str(manifest["registry"])
@@ -49,7 +72,10 @@ def _build_one_image(
             console.print(f"[dim]Tagged[/dim] {remote_tag}")
     else:
         logger.error("build-image {} failed", service.name)
-        console.print(f"[red]Failed[/red] to build {service.name}")
+        if quiet:
+            console.print(f"[[red]{service.name}[/red]] FAILED ({elapsed}s) — log: {log_path}")
+        else:
+            console.print(f"[red]Failed[/red] to build {service.name}")
 
     return (service.name or "", success)
 

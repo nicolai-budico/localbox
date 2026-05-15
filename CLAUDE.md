@@ -104,7 +104,8 @@ localbox projects list                    # List all projects
 localbox projects clone libs:utils        # Clone single project
 localbox projects fetch                   # git pull --rebase (all)
 localbox projects fetch --force           # Hard-reset to origin/<branch>, discard local changes
-localbox projects build                   # Build all projects (sequential)
+localbox projects build                   # Build all projects — quiet by default (one line per job, logs in .build/logs/)
+localbox projects build --verbose         # Build with full Docker output streamed to stdout
 localbox projects build -j 4              # Build up to 4 in parallel per dependency tier
 localbox projects build -j auto           # Parallel, workers = os.cpu_count()
 localbox projects build be:api fe:api workers   # Multiple short-form targets
@@ -115,7 +116,8 @@ localbox projects switch --manifest assembles/v1.json --force      # Clean befor
 localbox projects status                  # Show status
 
 localbox services list                    # List all services
-localbox services build db:primary        # Build one service image
+localbox services build db:primary        # Build one service image (quiet by default)
+localbox services build --verbose         # Build with full Docker output streamed to stdout
 localbox services build -j 4             # Build up to 4 images in parallel
 localbox services build --manifest assembles/v1.json   # Build + apply registry tags from manifest
 localbox services push --manifest assembles/v1.json    # Push all images to registry
@@ -131,6 +133,9 @@ localbox manifest generate --manifest assembles/v1.json --tag v1 --registry reg.
 # Scaffolding:
 localbox solution init                    # Create solution.py + assets/
 localbox override init                    # Create solution-override.py
+localbox override list                    # List all overridable identifiers (env, config, overridden project paths)
+localbox override set env.DB_PASS secret  # Set a single override value (auto-quoted if needed)
+localbox override clear env.DB_PASS       # Reset a value to its default
 ```
 
 ## Key Conventions
