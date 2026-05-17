@@ -1,10 +1,4 @@
-# Spec: quiet-build
-
-## Purpose
-
-Defines the default quiet output mode for `localbox projects build` and `localbox services build`, and the `--verbose` flag that restores full streaming output.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Build output is quiet by default
 By default, `localbox projects build` and `localbox services build` SHALL suppress per-line Docker container output from the terminal. Instead they SHALL print a single start line when a job begins and a single result line when it completes. Full container output SHALL be written to a log file under `.build/logs/<job-name>.log` (relative to the solution root). The result line on failure SHALL include the log file path. On successful completion, the build timestamp SHALL be recorded at `.build/last-build/<project-name>` (relative to the solution root) and any legacy `.last-build` file inside the project source directory SHALL be deleted if present.
@@ -36,18 +30,3 @@ By default, `localbox projects build` and `localbox services build` SHALL suppre
 #### Scenario: projects status reads last-build from build directory
 - **WHEN** `localbox projects status` is run after a successful build
 - **THEN** the "Last Build" column SHALL reflect the timestamp stored at `.build/last-build/<project-name>`
-
-### Requirement: --verbose flag restores full output
-`localbox projects build` and `localbox services build` SHALL accept a `--verbose` flag. When passed, all Docker container output SHALL be streamed to stdout and no quiet-mode status lines are printed. Behavior SHALL be identical to the pre-quiet-build output.
-
-#### Scenario: Verbose streams Docker output
-- **WHEN** `localbox projects build --verbose` is run
-- **THEN** all Docker container output lines are written to stdout as they arrive
-
-#### Scenario: Verbose suppresses status lines
-- **WHEN** `localbox projects build --verbose` is run
-- **THEN** no `Building...` / `OK` / `FAILED` status lines are printed by the build runner
-
-#### Scenario: Verbose and parallel compatible
-- **WHEN** `localbox projects build -j 4 --verbose` is run
-- **THEN** all Docker container output from concurrent jobs is streamed to stdout without prefixing; interleaving is expected and acceptable
