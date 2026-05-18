@@ -1071,6 +1071,87 @@ class TestComposeGenerate:
 # ---------------------------------------------------------------------------
 
 
+class TestLastBuildMarker:
+    """Marker stored in .build/last-build/<name>, not inside project source dir."""
+
+    def test_write_stores_marker_in_build_dir(self, tmp_path):
+        """Successful build writes timestamp to .build/last-build/<name>."""
+        from localbox.commands.project import _write_last_build
+
+        build_dir = tmp_path / ".build"
+        source_dir = tmp_path / "src" / "myproject"
+        source_dir.mkdir(parents=True)
+
+        _write_last_build(build_dir, "myproject", source_dir)
+
+        marker = build_dir / "last-build" / "myproject"
+        assert marker.exists(), "marker must exist in build dir"
+        assert not (source_dir / ".last-build").exists(), "must not write into source dir"
+
+    def test_read_returns_none_when_no_marker(self, tmp_path):
+        """_read_last_build returns None when no marker file present."""
+        from localbox.commands.project import _read_last_build
+
+        result = _read_last_build(tmp_path / ".build", "myproject")
+        assert result is None
+
+    def test_read_returns_datetime_from_build_dir(self, tmp_path):
+        """_read_last_build reads from .build/last-build/<name>."""
+        from localbox.commands.project import _read_last_build, _write_last_build
+
+        build_dir = tmp_path / ".build"
+        source_dir = tmp_path / "src" / "myproject"
+        source_dir.mkdir(parents=True)
+
+        _write_last_build(build_dir, "myproject", source_dir)
+        result = _read_last_build(build_dir, "myproject")
+
+        assert result is not None
+        assert result.tzinfo is not None  # timezone-aware
+
+    def test_write_deletes_legacy_file(self, tmp_path):
+        """Write removes legacy .last-build from project source dir if present."""
+        from localbox.commands.project import _write_last_build
+
+        build_dir = tmp_path / ".build"
+        source_dir = tmp_path / "src" / "myproject"
+        source_dir.mkdir(parents=True)
+        legacy = source_dir / ".last-build"
+        legacy.write_text("2024-01-01T00:00:00+00:00")
+
+        _write_last_build(build_dir, "myproject", source_dir)
+
+        assert not legacy.exists(), "legacy file must be deleted on successful build"
+        assert (build_dir / "last-build" / "myproject").exists()
+
+    def test_status_reads_from_build_dir(self, tmp_path):
+        """`projects status` Last Build column reflects marker in .build/last-build/<name>."""
+        from localbox.commands.project import _write_last_build
+
+        p = Project("myapp", repo="git@example.com/myapp.git")
+        sol = _make_solution(tmp_path, projects=[p])
+
+        # Create cloned project dir so status shows branch info
+        project_dir = sol.directories.projects / "myapp"
+        project_dir.mkdir(parents=True)
+
+        # Write marker in build dir
+        _write_last_build(sol.directories.build, "myapp", project_dir)
+
+        with patch("localbox.cli.load_solution_or_exit", return_value=sol):
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stdout="main\n")
+                result = _runner().invoke(cli, ["projects", "status"])
+
+        assert result.exit_code == 0
+        assert "never" not in result.output, "should show build time, not 'never'"
+
+
+# ---------------------------------------------------------------------------
+# Plugin loading
+# ---------------------------------------------------------------------------
+
+
 class TestPluginLoading:
     """Tests for _load_plugins() entry-point discovery."""
 

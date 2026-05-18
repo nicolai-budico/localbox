@@ -19,17 +19,30 @@ if TYPE_CHECKING:
 
 console = Console()
 
-_LAST_BUILD_FILE = ".last-build"
+_LAST_BUILD_FILE = ".last-build"  # legacy path inside project repo — no longer written
 
 
-def _write_last_build(source_dir: Path) -> None:
-    """Write current UTC timestamp to .last-build in the project directory."""
-    (source_dir / _LAST_BUILD_FILE).write_text(datetime.now(timezone.utc).isoformat())
+def _last_build_path(build_dir: Path, project_name: str) -> Path:
+    return build_dir / "last-build" / project_name
 
 
-def _read_last_build(source_dir: Path) -> datetime | None:
-    """Read last build timestamp from .last-build, returns None if absent or unreadable."""
-    marker = source_dir / _LAST_BUILD_FILE
+def _write_last_build(build_dir: Path, project_name: str, source_dir: Path) -> None:
+    """Write current UTC timestamp to .build/last-build/<project_name>.
+
+    Also removes the legacy .last-build file from the project source directory
+    if present, so git working trees are left clean.
+    """
+    marker = _last_build_path(build_dir, project_name)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(datetime.now(timezone.utc).isoformat())
+    legacy = source_dir / _LAST_BUILD_FILE
+    if legacy.exists():
+        legacy.unlink()
+
+
+def _read_last_build(build_dir: Path, project_name: str) -> datetime | None:
+    """Read last build timestamp from .build/last-build/<project_name>."""
+    marker = _last_build_path(build_dir, project_name)
     if not marker.exists():
         return None
     try:
@@ -600,7 +613,7 @@ def build_project(
     )
 
     if success:
-        _write_last_build(source_dir)
+        _write_last_build(solution.directories.build, project.name or "", source_dir)
         logger.info("build {} completed", project.name)
         if verbose:
             console.print(f"[green]Built[/green] {project.name}")
@@ -644,7 +657,7 @@ def show_project_status(
 
         # Last build
         if cloned:
-            last_build_dt = _read_last_build(project_dir)
+            last_build_dt = _read_last_build(solution.directories.build, project.name or "")
             last_build = _format_age(last_build_dt) if last_build_dt else "never"
         else:
             last_build = "-"
